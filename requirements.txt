@@ -1,0 +1,7 @@
+numpy>=1.26
+opencv-python>=4.9
+onnx>=1.16
+onnxruntime-gpu[cuda,cudnn]>=1.22 ; platform_system != "Darwin"
+gradio>=5.0,<7
+imageio-ffmpeg>=0.5
+tqdm>=4.66
