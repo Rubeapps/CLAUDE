@@ -1,4 +1,6 @@
 """Troca de cara (InSwapper), máscaras, restauro de cara (GFPGAN/CodeFormer) e upscale (Real-ESRGAN)."""
+import os
+
 import cv2
 import numpy as np
 import onnx
@@ -69,21 +71,29 @@ def match_color(src, ref, mask):
 
 class FaceSwapper:
     def __init__(self, progress=None):
-        self.sess = models.session("swapper", progress)
-        graph = onnx.load(models.model_path(models.resolve("swapper")))
+        src = models.download(models.resolve("swapper"), progress)
+        graph = onnx.load(src)
         self.emap = numpy_helper.to_array(graph.graph.initializer[-1]).astype(np.float32)
+        # Variante com lote dinâmico: os boost² recortes do "pixel boost" vão à placa numa só chamada.
+        batch_path = src[:-5] + "_batch.onnx"
+        if not os.path.isfile(batch_path):
+            for v in list(graph.graph.input) + list(graph.graph.output):
+                d = v.type.tensor_type.shape.dim[0]
+                d.ClearField("dim_value")
+                d.dim_param = "N"
+            onnx.save(graph, batch_path + ".tmp")
+            os.replace(batch_path + ".tmp", batch_path)
         del graph
+        self.sess = models.session("swapper", progress, path=batch_path)
 
     def latent(self, embedding):
         lat = embedding.reshape(1, -1) @ self.emap
         return (lat / np.linalg.norm(lat)).astype(np.float32)
 
     def _run(self, crops_rgb01, latent):
-        out = []
-        for c in crops_rgb01:
-            blob = np.ascontiguousarray(c.transpose(2, 0, 1)[None], dtype=np.float32)
-            out.append(self.sess.run(None, {"target": blob, "source": latent})[0][0].transpose(1, 2, 0))
-        return np.stack(out)
+        blob = np.ascontiguousarray(crops_rgb01.transpose(0, 3, 1, 2), dtype=np.float32)
+        src = np.ascontiguousarray(np.repeat(latent, len(blob), axis=0))
+        return self.sess.run(None, {"target": blob, "source": src})[0].transpose(0, 2, 3, 1)
 
     def swap(self, frame, face, latent, boost=1, mask_blur=0.3, padding=(0, 0, 0, 0),
              masker: FaceMasker = None, occlusion=False, region=False, color_fix=False):
@@ -123,6 +133,8 @@ class FaceEnhancer:
         if self.kind == "codeformer":
             feeds["weight"] = np.array(fidelity, dtype=np.float64)
         out = self.sess.run(None, feeds)[0][0].transpose(1, 2, 0)
+        if not np.isfinite(out).all():  # proteção: FP16 pode dar overflow em casos raros
+            return frame
         out = ((out.clip(-1, 1) + 1) / 2 * 255)[..., ::-1]
         blended = (out * strength + crop.astype(np.float32) * (1 - strength)).clip(0, 255).astype(np.uint8)
         mask = box_mask(512, 0.3)

@@ -41,6 +41,10 @@ A opção **Resolução final** (2x / 1080p / 1440p / 4K) faz upscale **ao mesmo
 primeiro aumenta a resolução, depois troca e restaura a cara já na resolução final (mais detalhe).
 
 ### Velocidade
+- **TensorRT (opcional, recomendado em placas RTX):** corre `install_tensorrt.bat` uma vez. Acelera 2-3x a troca,
+  o restauro e as máscaras. Na 1.ª utilização cada modelo é otimizado para a tua placa (1-3 min cada, só uma vez;
+  fica guardado em `models/trt_cache`). Se não funcionar, a app continua com CUDA automaticamente.
+- **Troca em lote:** os 4 recortes do "pixel boost" vão à placa numa só chamada.
 - **Upscale rápido (Clear Reality x4):** rede compacta ~50x mais rápida que o Real-ESRGAN, resultado natural.
 - **Troca a 2x por defeito:** com restauro ligado, 4x não se nota e custa 4x mais.
 - A máscara de oclusão é calculada uma vez e reaproveitada pelo restauro.

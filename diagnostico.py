@@ -37,27 +37,52 @@ except Exception:  # noqa: BLE001
     pass
 print()
 
+if "--trt-check" in sys.argv:
+    # Usado pelo install_tensorrt.bat: testa se o TensorRT arranca com o detetor.
+    ok = models.tensorrt_available()
+    if ok:
+        sess = models.session("detector")
+        ok = sess.get_providers()[0] == "TensorrtExecutionProvider"
+    print("TENSORRT_OK" if ok else "TENSORRT_FALHOU")
+    sys.exit(0 if ok else 1)
+
+print(f"TensorRT: {'ATIVO' if models.tensorrt_available() else 'não instalado (opcional: install_tensorrt.bat)'}")
+print()
+
+from faceswap.core.processors import FaceSwapper  # noqa: E402
+
 TESTS = {
     "detector": {"input": (1, 3, 640, 640)},
-    "swapper": {"target": (1, 3, 128, 128), "source": (1, 512)},
     "gfpgan": {"input": (1, 3, 512, 512)},
     "occluder": {"input": (1, 256, 256, 3)},
     "parser": {"input": (1, 3, 512, 512)},
-    "esrgan_x2": {"input": (1, 3, 256, 256)},
+    "clear_reality_x4": {"input": (1, 3, 256, 256)},
 }
+
+
+def bench(sess, data, n=10):
+    sess.run(None, data)  # aquecimento
+    t = time.time()
+    for _ in range(n):
+        sess.run(None, data)
+    return (time.time() - t) / n * 1000
+
+
 for name, feeds in TESTS.items():
     try:
         sess = models.session(name)
-        data = {k: np.random.rand(*v).astype(np.float32) for k, v in feeds.items()}
-        sess.run(None, data)  # aquecimento
-        t = time.time()
-        n = 10
-        for _ in range(n):
-            sess.run(None, data)
-        ms = (time.time() - t) / n * 1000
-        print(f"  {name:10s} {sess.get_providers()[0]:26s} {ms:8.1f} ms")
+        data = {i.name: np.random.rand(*v).astype(np.float32) for i, v in zip(sess.get_inputs(), feeds.values())}
+        print(f"  {name:17s} {sess.get_providers()[0]:26s} {bench(sess, data):8.1f} ms")
     except Exception as e:  # noqa: BLE001
-        print(f"  {name:10s} ERRO: {e}")
+        print(f"  {name:17s} ERRO: {e}")
+try:
+    sw = FaceSwapper()
+    src = np.random.rand(1, 512).astype(np.float32)
+    for n in (1, 4):
+        data = {"target": np.random.rand(n, 3, 128, 128).astype(np.float32), "source": np.repeat(src, n, 0)}
+        print(f"  swapper x{n:<9d} {sw.sess.get_providers()[0]:26s} {bench(sw.sess, data):8.1f} ms")
+except Exception as e:  # noqa: BLE001
+    print(f"  swapper ERRO: {e}")
 print()
 print(f"Dispositivo final: {models.active_device()}")
-print("Na RTX 5060 o 'swapper' deve dar < 10 ms e o 'gfpgan' < 40 ms.")
+print("Referência RTX 5060 (CUDA): swapper x1 ~17 ms, gfpgan ~49 ms, occluder ~27 ms.")

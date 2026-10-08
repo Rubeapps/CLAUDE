@@ -73,6 +73,9 @@ def _preload_cuda():
 
 
 _preferred = None
+# Modelos com tamanho de entrada fixo durante um vídeo -> podem usar TensorRT (os upscalers não: mosaicos variam)
+TRT_MODELS = {"detector", "recognizer", "swapper", "swapper_fp16", "gfpgan", "codeformer", "occluder", "parser"}
+TRT_CACHE = os.path.join(MODELS_DIR, "trt_cache")
 
 
 def set_device(device):
@@ -83,10 +86,48 @@ def set_device(device):
         _sessions.clear()
 
 
-def _providers():
+_trt_state = None  # None = por testar, True/False = disponível ou não
+
+
+def tensorrt_available():
+    """TensorRT fica ativo se o utilizador correu install_tensorrt.bat (pacote tensorrt-cu13)."""
+    global _trt_state
+    if _trt_state is not None:
+        return _trt_state
+    _trt_state = False
+    if os.environ.get("FACESWAP_NO_TRT") or "TensorrtExecutionProvider" not in available_providers():
+        return False
+    if (_preferred or "auto") not in ("auto", "cuda"):
+        return False
+    import glob
+    import site
+    # DLLs do TensorRT instaladas pelo pip (pacote tensorrt-cu13-libs) ficam em site-packages/tensorrt*libs
+    dirs = []
+    for sp in site.getsitepackages() + [site.getusersitepackages()]:
+        dirs += [d for d in glob.glob(os.path.join(sp, "tensorrt*libs")) if glob.glob(os.path.join(d, "nvinfer*"))]
+    if not dirs:
+        return False
+    for d in dirs:
+        if hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(d)
+        os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+    _trt_state = True
+    return _trt_state
+
+
+def _providers(name=None):
     avail = available_providers()
     want = _preferred or "auto"
     order = []
+    if name in TRT_MODELS and tensorrt_available():
+        os.makedirs(TRT_CACHE, exist_ok=True)
+        order.append(("TensorrtExecutionProvider", {
+            "trt_fp16_enable": True,
+            "trt_engine_cache_enable": True,
+            "trt_engine_cache_path": TRT_CACHE,
+            "trt_timing_cache_enable": True,
+            "trt_timing_cache_path": TRT_CACHE,
+        }))
     if want in ("auto", "cuda") and "CUDAExecutionProvider" in avail:
         # HEURISTIC: escolhe logo um algoritmo bom, sem testes longos no arranque
         order.append(("CUDAExecutionProvider", {"cudnn_conv_algo_search": "HEURISTIC"}))
@@ -117,30 +158,42 @@ def needed_models():
     return [resolve(n) for n in base]
 
 
-def session(name, progress=None):
+def session(name, progress=None, path=None):
+    """Cria (ou devolve da cache) a sessão ONNX. `path` permite usar uma variante do ficheiro do modelo."""
     global _cuda_ready
     name = resolve(name)
+    key = path or name
     with _lock:
-        if name in _sessions:
-            return _sessions[name]
-    path = download(name, progress)
+        if key in _sessions:
+            return _sessions[key]
+    path = path or download(name, progress)
     if not _cuda_ready and "CUDAExecutionProvider" in available_providers():
         _preload_cuda()
         _cuda_ready = True
     opts = ort.SessionOptions()
     opts.log_severity_level = 3
+    providers = _providers(name)
+    if providers[0][0] == "TensorrtExecutionProvider":
+        print(f"[modelos] TensorRT: a otimizar {name} para a tua placa "
+              f"(só na 1.ª vez, pode demorar 1-3 min, a janela pode parecer parada)...")
     try:
-        sess = ort.InferenceSession(path, sess_options=opts, providers=_providers())
+        sess = ort.InferenceSession(path, sess_options=opts, providers=providers)
     except Exception as e:  # noqa: BLE001
-        print(f"[modelos] GPU falhou para {name} ({e}); a usar CPU.", file=sys.stderr)
-        sess = ort.InferenceSession(path, sess_options=opts, providers=["CPUExecutionProvider"])
+        print(f"[modelos] Acelerador falhou para {name} ({str(e)[:200]}); a tentar só CUDA/CPU.", file=sys.stderr)
+        try:
+            sess = ort.InferenceSession(path, sess_options=opts,
+                                        providers=[p for p in providers if (p if isinstance(p, str) else p[0])
+                                                   != "TensorrtExecutionProvider"])
+        except Exception as e2:  # noqa: BLE001
+            print(f"[modelos] GPU falhou para {name} ({e2}); a usar CPU.", file=sys.stderr)
+            sess = ort.InferenceSession(path, sess_options=opts, providers=["CPUExecutionProvider"])
     used = sess.get_providers()[0]
     print(f"[modelos] {name} -> {used}")
     if use_gpu() and used == "CPUExecutionProvider":
         print(f"[modelos] ATENÇÃO: {name} está a correr no PROCESSADOR (lento). Corre diagnostico.bat.",
               file=sys.stderr)
     with _lock:
-        _sessions[name] = sess
+        _sessions[key] = sess
     return sess
 
 
@@ -148,5 +201,6 @@ def active_device():
     sess = next(iter(_sessions.values()), None)
     provs = sess.get_providers() if sess else [p if isinstance(p, str) else p[0] for p in _providers()]
     first = provs[0]
-    return {"CUDAExecutionProvider": "GPU NVIDIA (CUDA)",
+    return {"TensorrtExecutionProvider": "GPU NVIDIA (TensorRT)",
+            "CUDAExecutionProvider": "GPU NVIDIA (CUDA)",
             "DmlExecutionProvider": "GPU (DirectML)"}.get(first, "CPU (lento)")
