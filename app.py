@@ -14,7 +14,7 @@ import numpy as np
 
 from faceswap import __version__
 from faceswap.core import models
-from faceswap.core.pipeline import MAX_SECONDS, Engine, Settings, probe, read_frame
+from faceswap.core.pipeline import MAX_SECONDS, Engine, Settings, plan_upscale, probe, read_frame
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(ROOT, "outputs")
@@ -184,6 +184,58 @@ def swap_image(files, target, consent, boost, enhancer, enh_strength, cf_fidelit
 BOOST_CHOICES = ["1x (128px · rápido)", "2x (256px · recomendado)", "4x (512px · máximo detalhe)"]
 
 
+UPSCALE_TARGETS = {"Dobro da resolução (2x)": 0, "1080p (Full HD)": 1080, "1440p (2K)": 1440, "2160p (4K)": 2160}
+
+
+def upscale_settings(video, target, restore, strength, fidelity, crf):
+    if not video:
+        raise gr.Error("Escolhe primeiro o vídeo.")
+    h = probe(video)["height"]
+    th = UPSCALE_TARGETS[target]
+    if th == 0:
+        up, model = True, "esrgan_x2"
+    else:
+        up, model = plan_upscale(h, th)
+    if not up and ENHANCERS[restore] == "none":
+        raise gr.Error(f"O vídeo já tem {h}p. Escolhe uma resolução maior ou liga o restauro de caras.")
+    return Settings(swap=False, target_mode="all", enhancer=ENHANCERS[restore], enhancer_strength=strength,
+                    codeformer_fidelity=fidelity, upscale=up, upscale_model=model, target_height=th,
+                    watermark=False, crf=int(crf))
+
+
+def upscale_preview(video, t, target, restore, strength, fidelity, crf, progress=gr.Progress()):
+    s = upscale_settings(video, target, restore, strength, fidelity, crf)
+    eng = engine(progress)
+    frame = read_frame(video, t)
+    out = eng.process_image(frame, None, s)
+    before = cv2.resize(frame, (out.shape[1], out.shape[0]), interpolation=cv2.INTER_LINEAR)
+    # Metade esquerda = original ampliado, metade direita = melhorado
+    mid = out.shape[1] // 2
+    comp = np.concatenate([before[:, :mid], out[:, mid:]], axis=1)
+    cv2.line(comp, (mid, 0), (mid, comp.shape[0]), (255, 255, 255), max(2, comp.shape[0] // 400))
+    return comp[..., ::-1], f"Esquerda: original · Direita: melhorado ({frame.shape[0]}p → {out.shape[0]}p)"
+
+
+def upscale_video(video, target, restore, strength, fidelity, crf, progress=gr.Progress()):
+    s = upscale_settings(video, target, restore, strength, fidelity, crf)
+    _cancel.clear()
+    eng = engine(progress)
+    src = safe_copy(video)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    dst = os.path.join(OUT_DIR, f"upscale_{time.strftime('%Y%m%d_%H%M%S')}.mp4")
+    t0 = time.time()
+    try:
+        eng.process_video(src, dst, None, s, progress=lambda f, d: progress(f, desc=d), cancel=_cancel)
+    except InterruptedError:
+        raise gr.Error("Processamento cancelado.")
+    finally:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+    return dst, f"✅ Concluído em {time.time() - t0:.0f}s · guardado em: {dst}"
+
+
 def apply_preset(name):
     p = PRESETS[name]
     return BOOST_CHOICES[{1: 0, 2: 1, 4: 2}[p["boost"]]], p["enhancer"], p["upscale"]
@@ -295,6 +347,37 @@ def ui():
                 i_go.click(swap_image, [i_src, i_tgt, i_consent, i_boost, i_enh, i_str, i_fid, i_up, i_mode, i_wm],
                            [i_out, i_file])
 
+            # ===== MELHORAR QUALIDADE =====
+            with gr.Tab("🔍 Melhorar qualidade"):
+                gr.Markdown("Aumenta a resolução e a nitidez de **qualquer vídeo** (Real-ESRGAN) e, se quiseres, "
+                            "restaura as caras (GFPGAN/CodeFormer). Não troca caras.")
+                with gr.Row():
+                    with gr.Column():
+                        u_video = gr.Video(label=f"Vídeo (até {MAX_SECONDS}s)", sources=["upload"])
+                        u_info = gr.Markdown("Sem vídeo.")
+                        u_target = gr.Radio(list(UPSCALE_TARGETS), value="Dobro da resolução (2x)",
+                                            label="Resolução final")
+                        with gr.Row():
+                            u_restore = gr.Dropdown(list(ENHANCERS), value="GFPGAN", label="Restaurar caras")
+                            u_crf = gr.Slider(10, 28, value=16, step=1, label="Compressão (menor = melhor)")
+                        with gr.Row():
+                            u_str = gr.Slider(0, 1, value=0.7, step=0.05, label="Força do restauro")
+                            u_fid = gr.Slider(0, 1, value=0.7, step=0.05, label="CodeFormer: fidelidade")
+                        with gr.Row():
+                            u_prev_btn = gr.Button("👁️ Comparar antes/depois")
+                            u_go = gr.Button("🚀 Melhorar vídeo", variant="primary", elem_classes="gen-btn")
+                        u_cancel = gr.Button("⏹ Cancelar", variant="stop", size="sm")
+                    with gr.Column():
+                        u_t = gr.Slider(0, 1, value=0, step=0.1, label="Momento para comparar (s)")
+                        u_prev = gr.Image(label="Antes | Depois", interactive=False)
+                        u_result = gr.Video(label="Resultado")
+                        u_status = gr.Markdown()
+                u_opts = [u_target, u_restore, u_str, u_fid, u_crf]
+                u_video.change(lambda v: on_video_change(v)[::2], u_video, [u_t, u_info])
+                u_prev_btn.click(upscale_preview, [u_video, u_t] + u_opts, [u_prev, u_status])
+                u_go.click(upscale_video, [u_video] + u_opts, [u_result, u_status])
+                u_cancel.click(cancel, None, u_status)
+
             # ===== AJUDA =====
             with gr.Tab("❓ Ajuda"):
                 gr.Markdown(HELP)
@@ -310,6 +393,8 @@ HELP = """
 - **GFPGAN** = mais rápido e natural. **CodeFormer** = mais nítido; baixa a *fidelidade* se a cara ficar desfocada, sobe se deixar de parecer a pessoa.
 - Se aparecer o queixo/testa original nas bordas, aumenta a *Suavidade da borda* ou ajusta os *recuos*.
 - **Upscale x2** duplica a resolução do vídeo todo – usa só em vídeos 720p ou menores (é lento).
+- **Separador "Melhorar qualidade"**: melhora qualquer vídeo sem trocar caras. Ideal para vídeos 480p/720p → 1080p/1440p.
+  Para 4K a partir de 1080p conta com ~15–30 min para 90s.
 
 ### Tempos aproximados (RTX 5060, vídeo 1080p de 90s a 30fps)
 | Perfil | Tempo |

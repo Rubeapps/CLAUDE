@@ -22,6 +22,7 @@ class Settings:
     target_mode: str = "largest"          # largest | all | reference
     reference_embedding: np.ndarray = None
     reference_threshold: float = 0.35     # semelhança mínima à cara de referência
+    swap: bool = True                     # False = só melhorar/upscale, sem trocar caras
     swap_boost: int = 2                   # 1, 2 ou 4 (128/256/512 px)
     mask_blur: float = 0.3
     mask_padding: tuple = (0, 0, 0, 0)
@@ -29,6 +30,8 @@ class Settings:
     enhancer_strength: float = 0.8
     codeformer_fidelity: float = 0.7
     upscale: bool = False
+    upscale_model: str = "esrgan_x2"      # esrgan_x2 | esrgan_x4
+    target_height: int = 0                # altura final depois do upscale (0 = escala do modelo)
     smoothing: bool = True                # estabiliza os pontos da cara entre frames
     det_threshold: float = 0.5
     watermark: bool = True
@@ -74,7 +77,7 @@ class Engine:
         self.analyser = FaceAnalyser(progress)
         self.swapper = FaceSwapper(progress)
         self._enhancers = {}
-        self._upscaler = None
+        self._upscalers = {}
         self._progress = progress
 
     def enhancer(self, kind):
@@ -82,10 +85,10 @@ class Engine:
             self._enhancers[kind] = FaceEnhancer(kind, self._progress)
         return self._enhancers[kind]
 
-    def upscaler(self):
-        if self._upscaler is None:
-            self._upscaler = Upscaler(self._progress)
-        return self._upscaler
+    def upscaler(self, kind="esrgan_x2"):
+        if kind not in self._upscalers:
+            self._upscalers[kind] = Upscaler(kind, self._progress)
+        return self._upscalers[kind]
 
     # ---------- seleção e estabilização das caras ----------
     def select_faces(self, frame, s: Settings):
@@ -123,19 +126,25 @@ class Engine:
         if s.smoothing:
             self._smooth(faces, prev)
         out = frame
-        for f in faces:
-            out = self.swapper.swap(out, f, latent, s.swap_boost, s.mask_blur, s.mask_padding)
+        if s.swap:
+            for f in faces:
+                out = self.swapper.swap(out, f, latent, s.swap_boost, s.mask_blur, s.mask_padding)
         if s.enhancer != "none":
             enh = self.enhancer(s.enhancer)
             for f in faces:
                 out = enh.enhance(out, f, s.enhancer_strength, s.codeformer_fidelity)
         if s.upscale:
-            out = self.upscaler().upscale(out)
+            out = self.upscaler(s.upscale_model).upscale(out)
+        if s.target_height and out.shape[0] != s.target_height:
+            r = s.target_height / out.shape[0]
+            interp = cv2.INTER_AREA if r < 1 else cv2.INTER_LANCZOS4
+            out = cv2.resize(out, (int(round(out.shape[1] * r / 2)) * 2, s.target_height), interpolation=interp)
         if s.watermark:
             out = add_watermark(out)
         return out, faces
 
     def process_image(self, image, latent, s: Settings):
+        # latent pode ser None quando s.swap=False (só melhorar/upscale)
         return self.process_frame(image.copy(), latent, s)[0]
 
     # ---------- vídeo completo ----------
@@ -203,3 +212,11 @@ class Engine:
                "-metadata", "comment=Conteudo gerado por IA (FaceSwap Studio)",
                "-movflags", "+faststart", dst]
         return subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def plan_upscale(src_height, target_height):
+    """Escolhe o modelo para chegar à altura pedida. Devolve (upscale?, modelo)."""
+    ratio = target_height / max(src_height, 1)
+    if ratio <= 1.0:
+        return False, "esrgan_x2"
+    return True, ("esrgan_x2" if ratio <= 2.0 else "esrgan_x4")

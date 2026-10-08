@@ -18,6 +18,7 @@ MODELS = {
     "gfpgan": ("gfpgan_1.4.onnx", 325, "Restauro de cara (GFPGAN 1.4)"),
     "codeformer": ("codeformer.onnx", 360, "Restauro de cara (CodeFormer)"),
     "esrgan_x2": ("real_esrgan_x2.onnx", 66, "Aumento de resolução (Real-ESRGAN x2)"),
+    "esrgan_x4": ("real_esrgan_x4.onnx", 64, "Aumento de resolução (Real-ESRGAN x4)"),
 }
 
 _sessions = {}

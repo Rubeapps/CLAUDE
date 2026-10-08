@@ -62,15 +62,17 @@ class FaceEnhancer:
 
 
 class Upscaler:
-    """Real-ESRGAN x2 em mosaico (para caber na memória da GPU)."""
+    """Real-ESRGAN x2/x4 em mosaico (para caber na memória da GPU)."""
 
-    def __init__(self, progress=None, tile=384, pad=16):
-        self.sess = models.session("esrgan_x2", progress)
-        self.tile, self.pad = tile, pad
+    def __init__(self, kind="esrgan_x2", progress=None, tile=384, pad=16):
+        self.sess = models.session(kind, progress)
+        self.scale = 4 if kind.endswith("x4") else 2
+        self.tile, self.pad = (tile if self.scale == 2 else 256), pad
 
     def upscale(self, frame):
         h, w = frame.shape[:2]
-        out = np.zeros((h * 2, w * 2, 3), np.uint8)
+        k = self.scale
+        out = np.zeros((h * k, w * k, 3), np.uint8)
         t, p = self.tile, self.pad
         padded = cv2.copyMakeBorder(frame, p, p, p, p, cv2.BORDER_REFLECT)
         for y in range(0, h, t):
@@ -80,5 +82,5 @@ class Upscaler:
                 blob = (tile[..., ::-1].astype(np.float32) / 255.0).transpose(2, 0, 1)[None]
                 res = self.sess.run(None, {"input": blob})[0][0].transpose(1, 2, 0)
                 res = (res.clip(0, 1) * 255)[..., ::-1].astype(np.uint8)
-                out[y * 2:(y + th) * 2, x * 2:(x + tw) * 2] = res[p * 2:p * 2 + th * 2, p * 2:p * 2 + tw * 2]
+                out[y * k:(y + th) * k, x * k:(x + tw) * k] = res[p * k:p * k + th * k, p * k:p * k + tw * k]
         return out

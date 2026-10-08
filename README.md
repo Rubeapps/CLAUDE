@@ -15,6 +15,11 @@ Corre no teu PC com placa NVIDIA (testado para a série RTX 50, por ex. RTX 5060
    - opcionalmente faz **upscale x2** do vídeo inteiro (Real-ESRGAN),
    - volta a juntar o vídeo em H.264 **com o áudio original**.
 
+## Separador "🔍 Melhorar qualidade"
+Melhora **qualquer vídeo** sem trocar caras: aumenta a resolução com Real-ESRGAN (x2 ou x4, escolhido
+automaticamente para 1080p / 1440p / 4K) e opcionalmente restaura as caras (GFPGAN/CodeFormer).
+Tem botão de comparação antes/depois.
+
 ## Instalação (Windows)
 1. Instala o **Python 3.12** → https://www.python.org/downloads/ (marca *"Add python.exe to PATH"*).
 2. Atualiza o **driver NVIDIA** (Game Ready ou Studio, versão recente).
