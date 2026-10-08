@@ -20,6 +20,7 @@ MODELS = {
     "codeformer": ("codeformer.onnx", "models-3.0.0", 360, "Restauro de cara (CodeFormer)"),
     "occluder": ("xseg_1.onnx", "models-3.1.0", 67, "Máscara de oclusão (XSeg)"),
     "parser": ("bisenet_resnet_34.onnx", "models-3.0.0", 90, "Máscara de pele (BiSeNet)"),
+    "clear_reality_x4": ("clear_reality_x4.onnx", "models-3.0.0", 2, "Aumento de resolução rápido (Clear Reality x4)"),
     "esrgan_x2": ("real_esrgan_x2.onnx", "models-3.0.0", 66, "Aumento de resolução (Real-ESRGAN x2)"),
     "esrgan_x2_fp16": ("real_esrgan_x2_fp16.onnx", "models-3.0.0", 35, "Aumento de resolução (Real-ESRGAN x2 FP16)"),
     "esrgan_x4": ("real_esrgan_x4.onnx", "models-3.0.0", 66, "Aumento de resolução (Real-ESRGAN x4)"),
@@ -112,7 +113,7 @@ def resolve(name):
 
 
 def needed_models():
-    base = ["detector", "recognizer", "swapper", "gfpgan", "codeformer", "occluder", "parser", "esrgan_x2", "esrgan_x4"]
+    base = ["detector", "recognizer", "swapper", "gfpgan", "codeformer", "occluder", "parser", "clear_reality_x4"]
     return [resolve(n) for n in base]
 
 

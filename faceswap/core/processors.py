@@ -99,7 +99,9 @@ class FaceSwapper:
 
         mask = box_mask(size, mask_blur, padding)
         if masker is not None and occlusion:
-            mask = np.minimum(mask, masker.occlusion(crop))
+            occ = masker.occlusion(crop)
+            mask = np.minimum(mask, occ)
+            face.occ = (occ, M)  # reaproveitado pelo restauro (evita correr o modelo 2x)
         if masker is not None and region:
             mask = np.minimum(mask, masker.region(crop))
         if color_fix:
@@ -124,20 +126,33 @@ class FaceEnhancer:
         out = ((out.clip(-1, 1) + 1) / 2 * 255)[..., ::-1]
         blended = (out * strength + crop.astype(np.float32) * (1 - strength)).clip(0, 255).astype(np.uint8)
         mask = box_mask(512, 0.3)
-        if masker is not None and occlusion:
+        if occlusion and getattr(face, "occ", None) is not None:
+            # Converte a máscara de oclusão já calculada na troca para o recorte do restauro
+            occ, m_swap = face.occ
+            a = np.vstack([M, [0, 0, 1]]) @ np.vstack([cv2.invertAffineTransform(m_swap), [0, 0, 1]])
+            occ512 = cv2.warpAffine(occ, a[:2], (512, 512), flags=cv2.INTER_LINEAR, borderValue=1.0)
+            mask = np.minimum(mask, occ512)
+        elif masker is not None and occlusion:
             mask = np.minimum(mask, masker.occlusion(crop))
         return paste_back(frame, blended, mask, M)
 
 
 class Upscaler:
-    """Real-ESRGAN x2/x4 em mosaico (para caber na memória da GPU)."""
+    """Upscale em mosaico (para caber na memória da GPU).
 
-    def __init__(self, kind="esrgan_x2", progress=None, pad=16):
+    clear_reality_x4 = rede compacta, ~50x mais rápida que o Real-ESRGAN e com resultado natural.
+    esrgan_x2/x4     = Real-ESRGAN completo (mais pesado).
+    """
+
+    def __init__(self, kind="clear_reality_x4", progress=None, pad=16):
         self.sess = models.session(kind, progress)
+        self.input_name = self.sess.get_inputs()[0].name
         self.scale = 4 if kind.endswith("x4") else 2
-        # Na GPU usamos mosaicos maiores (menos chamadas = mais rápido); 8 GB de VRAM chegam.
         gpu = models.use_gpu()
-        self.tile = (640 if gpu else 384) if self.scale == 2 else (384 if gpu else 256)
+        if kind.startswith("clear_reality"):
+            self.tile = 512 if gpu else 384
+        else:
+            self.tile = (640 if gpu else 384) if self.scale == 2 else (384 if gpu else 256)
         self.pad = pad
 
     def upscale(self, frame):
@@ -151,7 +166,7 @@ class Upscaler:
                 th, tw = min(t, h - y), min(t, w - x)
                 tile = padded[y:y + th + 2 * p, x:x + tw + 2 * p]
                 blob = np.ascontiguousarray((tile[..., ::-1].astype(np.float32) / 255.0).transpose(2, 0, 1)[None])
-                res = self.sess.run(None, {"input": blob})[0][0].transpose(1, 2, 0)
+                res = self.sess.run(None, {self.input_name: blob})[0][0].transpose(1, 2, 0)
                 res = (res.clip(0, 1) * 255)[..., ::-1].astype(np.uint8)
                 out[y * k:(y + th) * k, x * k:(x + tw) * k] = res[p * k:p * k + th * k, p * k:p * k + tw * k]
         return out

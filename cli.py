@@ -29,6 +29,7 @@ def main():
     ap.add_argument("--fidelity", type=float, default=0.7)
     ap.add_argument("--upscale", action="store_true", help="Upscale x2")
     ap.add_argument("--final-height", type=int, default=0, help="Altura final, ex. 1080, 1440, 2160")
+    ap.add_argument("--upscale-quality", choices=["fast", "max"], default="fast")
     ap.add_argument("--no-occlusion", action="store_true", help="Desliga a máscara de oclusão")
     ap.add_argument("--region", action="store_true", help="Máscara de pele (bordas mais naturais)")
     ap.add_argument("--color-fix", action="store_true", help="Corrige cor/luz da cara")
@@ -50,7 +51,7 @@ def main():
     if a.final_height:
         is_img = os.path.splitext(a.target)[1].lower() in IMAGE_EXT
         h = read(a.target).shape[0] if is_img else probe(a.target)["height"]
-        s.upscale, s.upscale_model = plan_upscale(h, a.final_height)
+        s.upscale, s.upscale_model = plan_upscale(h, a.final_height, a.upscale_quality)
         s.target_height = a.final_height
     print(f"Dispositivo: {models.active_device()} · fotos de origem com cara: {n}")
 

@@ -35,12 +35,16 @@ Tem botão de comparação antes/depois.
 |---|---|---|---|---|
 | Rápido | 128 px | — | — | ~1–2 min |
 | Equilibrado | 256 px | GFPGAN | oclusão | ~2–4 min |
-| Máxima qualidade | 512 px | GFPGAN | oclusão + pele + cor | ~5–10 min |
+| Máxima qualidade | 256 px | GFPGAN | oclusão + pele + cor | ~3–6 min |
 
 A opção **Resolução final** (2x / 1080p / 1440p / 4K) faz upscale **ao mesmo tempo** que a troca:
 primeiro aumenta a resolução, depois troca e restaura a cara já na resolução final (mais detalhe).
 
 ### Velocidade
+- **Upscale rápido (Clear Reality x4):** rede compacta ~50x mais rápida que o Real-ESRGAN, resultado natural.
+- **Troca a 2x por defeito:** com restauro ligado, 4x não se nota e custa 4x mais.
+- A máscara de oclusão é calculada uma vez e reaproveitada pelo restauro.
+- No fim de cada vídeo a janela preta mostra os **fps** e o **tempo de cada etapa** (deteção, upscale, troca, restauro).
 - Vários frames processados em paralelo (deteção sequencial + troca/restauro/upscale em 4 threads).
 - Na GPU usa modelos **FP16** (InSwapper, Real-ESRGAN) – ~2x mais rápidos, mesma qualidade.
 - Grava o vídeo com **NVENC** (codificador da placa NVIDIA) quando disponível.
@@ -79,6 +83,7 @@ O **código** desta app é teu. Mas os **modelos de IA** têm licenças própria
 | CodeFormer | S-Lab (não comercial) | ❌ Não |
 | GFPGAN 1.4 | Apache 2.0 | ✅ Sim |
 | Real-ESRGAN | BSD-3 | ✅ Sim |
+| Clear Reality x4 (upscale rápido) | CC BY-NC-SA (não comercial) | ❌ Não |
 
 Para **vender** a app é preciso obter licença comercial da InsightFace (insightface.ai) ou trocar esses modelos por alternativas com licença comercial. Para uso pessoal não há problema.
 

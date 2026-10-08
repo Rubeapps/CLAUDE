@@ -33,7 +33,7 @@ class Settings:
     enhancer_strength: float = 0.8
     codeformer_fidelity: float = 0.7
     upscale: bool = False
-    upscale_model: str = "esrgan_x2"      # esrgan_x2 | esrgan_x4
+    upscale_model: str = "clear_reality_x4"  # clear_reality_x4 | esrgan_x2 | esrgan_x4
     target_height: int = 0                # altura final depois do upscale (0 = escala do modelo)
     smoothing: bool = True                # estabiliza os pontos da cara entre frames
     smoothing_strength: float = 1.0       # 0.3 = pouco, 1 = normal, 2 = muito
@@ -109,6 +109,19 @@ class Engine:
         self._upscalers = {}
         self._progress = progress
         self._lock = threading.Lock()
+        self._stats = collections.defaultdict(float)
+
+    def _tick(self, stage, t0):
+        dt = time.perf_counter() - t0
+        with self._lock:
+            self._stats[stage] += dt
+        return time.perf_counter()
+
+    def stats_report(self, frames):
+        if not frames:
+            return ""
+        parts = [f"{k} {v / frames * 1000:.0f} ms" for k, v in self._stats.items() if v > 0]
+        return "Tempo médio por frame (por etapa): " + " · ".join(parts)
 
     def enhancer(self, kind):
         with self._lock:
@@ -116,7 +129,7 @@ class Engine:
                 self._enhancers[kind] = FaceEnhancer(kind, self._progress)
             return self._enhancers[kind]
 
-    def upscaler(self, kind="esrgan_x2"):
+    def upscaler(self, kind="clear_reality_x4"):
         with self._lock:
             if kind not in self._upscalers:
                 self._upscalers[kind] = Upscaler(kind, self._progress)
@@ -153,14 +166,17 @@ class Engine:
         if s.max_height and frame.shape[0] > s.max_height:
             r = s.max_height / frame.shape[0]
             frame = cv2.resize(frame, (int(frame.shape[1] * r) // 2 * 2, s.max_height), interpolation=cv2.INTER_AREA)
+        t = time.perf_counter()
         faces = self.select_faces(frame, s)
         if tracker is not None:
             tracker.update(faces)
+        self._tick("deteção", t)
         return frame, faces
 
     # ---------- etapa 2 (em paralelo): upscale + troca + restauro ----------
     def render(self, frame, faces, latent, s: Settings):
         out = frame
+        t = time.perf_counter()
         if s.upscale:
             # Upscale primeiro: a troca e o restauro trabalham depois na resolução final (mais detalhe).
             out = self.upscaler(s.upscale_model).upscale(out)
@@ -171,14 +187,17 @@ class Engine:
         k = out.shape[0] / frame.shape[0]
         if k != 1:
             faces = [_scaled(f, k) for f in faces]
+        t = self._tick("upscale", t)
         if s.swap and latent is not None:
             for f in faces:
                 out = self.swapper.swap(out, f, latent, s.swap_boost, s.mask_blur, s.mask_padding, self.masker,
                                         s.occlusion_mask, s.region_mask, s.color_fix)
+        t = self._tick("troca+máscaras", t)
         if s.enhancer != "none":
             enh = self.enhancer(s.enhancer)
             for f in faces:
                 out = enh.enhance(out, f, s.enhancer_strength, s.codeformer_fidelity, self.masker, s.occlusion_mask)
+        self._tick("restauro", t)
         if s.watermark:
             out = add_watermark(out)
         return out
@@ -219,6 +238,7 @@ class Engine:
         threading.Thread(target=reader, daemon=True).start()
         device = models.active_device()
         tracker = FaceTracker(fps, s.smoothing_strength) if s.smoothing else None
+        self._stats.clear()
         pool = ThreadPoolExecutor(max_workers=workers)
         pending = collections.deque()
         writer = None
@@ -235,6 +255,8 @@ class Engine:
                 el = time.time() - state["t0"]
                 eta = el / done * (total - done)
                 progress(done / total, f"Frame {done}/{total} · {done / el:.1f} fps · faltam ~{eta:.0f}s · {device}")
+            if state["done"] % 150 == 0:
+                print(f"[vídeo] frame {state['done']}/{total} · {self.stats_report(state['done'])}")
 
         try:
             while True:
@@ -255,6 +277,11 @@ class Engine:
             if writer is not None:
                 writer.stdin.close()
                 writer.wait()
+        report = self.stats_report(state["done"])
+        el = time.time() - state["t0"]
+        print(f"[vídeo] {state['done']} frames em {el:.0f}s ({state['done'] / max(el, 1e-6):.1f} fps) · {device} · "
+              f"{workers} threads · codificador {video_encoder()}")
+        print(f"[vídeo] {report}  (somado entre threads)")
         if writer is None or writer.returncode != 0:
             raise RuntimeError("Falha ao gravar o vídeo:\n" + (writer.stderr.read().decode(errors="ignore")[-800:] if writer else ""))
         return dst
@@ -278,9 +305,14 @@ class Engine:
         return subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
-def plan_upscale(src_height, target_height):
-    """Escolhe o modelo para chegar à altura pedida. Devolve (upscale?, modelo)."""
+def plan_upscale(src_height, target_height, quality="fast"):
+    """Escolhe o modelo para chegar à altura pedida. Devolve (upscale?, modelo).
+
+    quality="fast" -> Clear Reality x4 (rápido); "max" -> Real-ESRGAN x2/x4 (lento).
+    """
     ratio = target_height / max(src_height, 1)
     if ratio <= 1.0:
-        return False, "esrgan_x2"
+        return False, "clear_reality_x4"
+    if quality == "fast":
+        return True, "clear_reality_x4"
     return True, ("esrgan_x2" if ratio <= 2.0 else "esrgan_x4")

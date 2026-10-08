@@ -27,8 +27,9 @@ _cancel = threading.Event()
 PRESETS = {
     "Rápido": dict(boost=1, enhancer="Nenhum", strength=0.7, occlusion=False, region=False, color=False),
     "Equilibrado": dict(boost=2, enhancer="GFPGAN", strength=0.7, occlusion=True, region=False, color=False),
-    "Máxima qualidade": dict(boost=4, enhancer="GFPGAN", strength=0.8, occlusion=True, region=True, color=True),
+    "Máxima qualidade": dict(boost=2, enhancer="GFPGAN", strength=0.8, occlusion=True, region=True, color=True),
 }
+UP_MODELS = {"Rápido · Clear Reality (recomendado)": "fast", "Máximo · Real-ESRGAN (muito lento)": "max"}
 FINAL_RES = {"Original": 0, "2x (dobro)": -2, "1080p": 1080, "1440p (2K)": 1440, "2160p (4K)": 2160}
 ENHANCERS = {"Nenhum": "none", "GFPGAN": "gfpgan", "CodeFormer": "codeformer"}
 MODES = {"Maior cara do vídeo": "largest", "Todas as caras": "all", "Só uma pessoa (referência)": "reference"}
@@ -70,7 +71,7 @@ def source_latent(files, eng):
 
 
 def build_settings(mode, ref_time, ref_index, ref_threshold, boost, enhancer, enh_strength, cf_fidelity,
-                   final_res, occlusion, region, color_fix, smooth_strength, smoothing, mask_blur, pad_top,
+                   final_res, up_quality, occlusion, region, color_fix, smooth_strength, smoothing, mask_blur, pad_top,
                    pad_bottom, det_threshold, watermark, crf, max_height, trim_start, video_path, eng):
     s = Settings(
         target_mode=MODES[mode], reference_threshold=ref_threshold, swap_boost=int(boost.split("x")[0]),
@@ -86,10 +87,9 @@ def build_settings(mode, ref_time, ref_index, ref_threshold, boost, enhancer, en
         if s.max_height:
             h = min(h, s.max_height)
         if target < 0:  # 2x
-            s.upscale, s.upscale_model = True, "esrgan_x2"
-        else:
-            s.upscale, s.upscale_model = plan_upscale(h, target)
-            s.target_height = target if s.upscale else 0
+            target = h * 2
+        s.upscale, s.upscale_model = plan_upscale(h, target, UP_MODELS[up_quality])
+        s.target_height = target if s.upscale else 0
     if s.target_mode == "reference":
         if not video_path:
             raise gr.Error("Escolhe primeiro o vídeo.")
@@ -199,15 +199,12 @@ BOOST_CHOICES = ["1x (128px · rápido)", "2x (256px · recomendado)", "4x (512p
 UPSCALE_TARGETS = {"Dobro da resolução (2x)": 0, "1080p (Full HD)": 1080, "1440p (2K)": 1440, "2160p (4K)": 2160}
 
 
-def upscale_settings(video, target, restore, strength, fidelity, crf):
+def upscale_settings(video, target, quality, restore, strength, fidelity, crf):
     if not video:
         raise gr.Error("Escolhe primeiro o vídeo.")
     h = probe(video)["height"]
-    th = UPSCALE_TARGETS[target]
-    if th == 0:
-        up, model = True, "esrgan_x2"
-    else:
-        up, model = plan_upscale(h, th)
+    th = UPSCALE_TARGETS[target] or h * 2
+    up, model = plan_upscale(h, th, UP_MODELS[quality])
     if not up and ENHANCERS[restore] == "none":
         raise gr.Error(f"O vídeo já tem {h}p. Escolhe uma resolução maior ou liga o restauro de caras.")
     return Settings(swap=False, target_mode="all", enhancer=ENHANCERS[restore], enhancer_strength=strength,
@@ -215,8 +212,8 @@ def upscale_settings(video, target, restore, strength, fidelity, crf):
                     watermark=False, crf=int(crf))
 
 
-def upscale_preview(video, t, target, restore, strength, fidelity, crf, progress=gr.Progress()):
-    s = upscale_settings(video, target, restore, strength, fidelity, crf)
+def upscale_preview(video, t, target, quality, restore, strength, fidelity, crf, progress=gr.Progress()):
+    s = upscale_settings(video, target, quality, restore, strength, fidelity, crf)
     eng = engine(progress)
     frame = read_frame(video, t)
     out = eng.process_image(frame, None, s)
@@ -228,8 +225,8 @@ def upscale_preview(video, t, target, restore, strength, fidelity, crf, progress
     return comp[..., ::-1], f"Esquerda: original · Direita: melhorado ({frame.shape[0]}p → {out.shape[0]}p)"
 
 
-def upscale_video(video, target, restore, strength, fidelity, crf, progress=gr.Progress()):
-    s = upscale_settings(video, target, restore, strength, fidelity, crf)
+def upscale_video(video, target, quality, restore, strength, fidelity, crf, progress=gr.Progress()):
+    s = upscale_settings(video, target, quality, restore, strength, fidelity, crf)
     _cancel.clear()
     eng = engine(progress)
     src = safe_copy(video)
@@ -307,6 +304,7 @@ def ui():
                         enhancer = gr.Dropdown(list(ENHANCERS), value="GFPGAN", label="Melhoria da cara")
                         final_res = gr.Dropdown(list(FINAL_RES), value="Original",
                                                 label="Resolução final (upscale ao mesmo tempo)")
+                        up_quality = gr.Dropdown(list(UP_MODELS), value=list(UP_MODELS)[0], label="Modelo de upscale")
                     with gr.Row():
                         occlusion = gr.Checkbox(value=True, label="Máscara de oclusão (mãos/cabelo/objetos à frente)")
                         region = gr.Checkbox(value=False, label="Máscara de pele (bordas mais naturais)")
@@ -332,7 +330,7 @@ def ui():
                         trim_start = gr.Number(value=0, minimum=0, label="Começar no segundo")
 
                 opts = [mode, ref_time, ref_index, ref_threshold, boost, enhancer, enh_strength, cf_fidelity, final_res,
-                        occlusion, region, color_fix, smooth_strength, smoothing, mask_blur, pad_top, pad_bottom,
+                        up_quality, occlusion, region, color_fix, smooth_strength, smoothing, mask_blur, pad_top, pad_bottom,
                         det_threshold, watermark, crf, max_height, trim_start]
 
                 preset.change(apply_preset, preset, [boost, enhancer, enh_strength, occlusion, region, color_fix])
@@ -377,6 +375,7 @@ def ui():
                         u_info = gr.Markdown("Sem vídeo.")
                         u_target = gr.Radio(list(UPSCALE_TARGETS), value="Dobro da resolução (2x)",
                                             label="Resolução final")
+                        u_quality = gr.Dropdown(list(UP_MODELS), value=list(UP_MODELS)[0], label="Modelo de upscale")
                         with gr.Row():
                             u_restore = gr.Dropdown(list(ENHANCERS), value="GFPGAN", label="Restaurar caras")
                             u_crf = gr.Slider(10, 28, value=16, step=1, label="Compressão (menor = melhor)")
@@ -392,7 +391,7 @@ def ui():
                         u_prev = gr.Image(label="Antes | Depois", interactive=False)
                         u_result = gr.Video(label="Resultado")
                         u_status = gr.Markdown()
-                u_opts = [u_target, u_restore, u_str, u_fid, u_crf]
+                u_opts = [u_target, u_quality, u_restore, u_str, u_fid, u_crf]
                 u_video.change(lambda v: on_video_change(v)[::2], u_video, [u_t, u_info])
                 u_prev_btn.click(upscale_preview, [u_video, u_t] + u_opts, [u_prev, u_status])
                 u_go.click(upscale_video, [u_video] + u_opts, [u_result, u_status])
@@ -409,7 +408,8 @@ HELP = """
 - **Foto de origem:** cara de frente, bem iluminada, nítida, sem óculos escuros nem mãos à frente. 3–5 fotos da mesma pessoa dão um resultado mais fiel.
 - **Vídeo:** cara visível e não demasiado pequena; luz parecida com a da foto ajuda.
 - **Testa primeiro** com *Pré-visualizar frame* antes de gerar o vídeo todo.
-- **Resolução da troca 2x** é o melhor equilíbrio; **4x** dá mais detalhe mas demora ~4x mais na troca.
+- **Resolução da troca 2x** é o melhor equilíbrio. Com GFPGAN/CodeFormer ligado, **4x quase não se nota** (o restauro já refaz o detalhe a 512 px) e demora ~4x mais – usa 4x só em grandes planos sem restauro.
+- **Modelo de upscale "Rápido" (Clear Reality)** é ~50x mais rápido que o Real-ESRGAN e dá um resultado natural. Usa o "Máximo" só se tiveres tempo.
 - **GFPGAN** = mais rápido e natural. **CodeFormer** = mais nítido; baixa a *fidelidade* se a cara ficar desfocada, sobe se deixar de parecer a pessoa.
 - Se aparecer o queixo/testa original nas bordas, aumenta a *Suavidade da borda* ou ajusta os *recuos*.
 - **Upscale x2** duplica a resolução do vídeo todo – usa só em vídeos 720p ou menores (é lento).
