@@ -217,6 +217,7 @@ class Engine:
             frames_q.put(None)
 
         threading.Thread(target=reader, daemon=True).start()
+        device = models.active_device()
         tracker = FaceTracker(fps, s.smoothing_strength) if s.smoothing else None
         pool = ThreadPoolExecutor(max_workers=workers)
         pending = collections.deque()
@@ -233,7 +234,7 @@ class Engine:
                 done = state["done"]
                 el = time.time() - state["t0"]
                 eta = el / done * (total - done)
-                progress(done / total, f"Frame {done}/{total} · {done / el:.1f} fps · faltam ~{eta:.0f}s")
+                progress(done / total, f"Frame {done}/{total} · {done / el:.1f} fps · faltam ~{eta:.0f}s · {device}")
 
         try:
             while True:

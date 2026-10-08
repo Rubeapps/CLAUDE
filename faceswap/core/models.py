@@ -87,8 +87,8 @@ def _providers():
     want = _preferred or "auto"
     order = []
     if want in ("auto", "cuda") and "CUDAExecutionProvider" in avail:
-        # EXHAUSTIVE: procura o algoritmo mais rápido para cada tamanho (os tamanhos repetem-se em vídeo)
-        order.append(("CUDAExecutionProvider", {"cudnn_conv_algo_search": "EXHAUSTIVE"}))
+        # HEURISTIC: escolhe logo um algoritmo bom, sem testes longos no arranque
+        order.append(("CUDAExecutionProvider", {"cudnn_conv_algo_search": "HEURISTIC"}))
     if want in ("auto", "directml") and "DmlExecutionProvider" in avail:
         order.append("DmlExecutionProvider")
     order.append("CPUExecutionProvider")
@@ -133,6 +133,11 @@ def session(name, progress=None):
     except Exception as e:  # noqa: BLE001
         print(f"[modelos] GPU falhou para {name} ({e}); a usar CPU.", file=sys.stderr)
         sess = ort.InferenceSession(path, sess_options=opts, providers=["CPUExecutionProvider"])
+    used = sess.get_providers()[0]
+    print(f"[modelos] {name} -> {used}")
+    if use_gpu() and used == "CPUExecutionProvider":
+        print(f"[modelos] ATENÇÃO: {name} está a correr no PROCESSADOR (lento). Corre diagnostico.bat.",
+              file=sys.stderr)
     with _lock:
         _sessions[name] = sess
     return sess

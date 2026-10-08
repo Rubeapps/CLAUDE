@@ -444,6 +444,7 @@ def main():
     ap.add_argument("--no-browser", action="store_true")
     a = ap.parse_args()
     models.set_device(a.device)
+    models.session("detector")  # confirma já se a GPU funciona (mostra no cabeçalho o dispositivo real)
     print(f"FaceSwap Studio v{__version__} · dispositivos disponíveis: {models.available_providers()}")
     ui().queue(default_concurrency_limit=1).launch(server_name="127.0.0.1", server_port=a.port,
                                                    inbrowser=not a.no_browser)
