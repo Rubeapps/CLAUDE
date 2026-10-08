@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 
 from faceswap.core import models
-from faceswap.core.pipeline import Engine, Settings
+from faceswap.core.pipeline import Engine, Settings, plan_upscale, probe
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
@@ -27,7 +27,11 @@ def main():
     ap.add_argument("--enhancer", choices=["none", "gfpgan", "codeformer"], default="gfpgan")
     ap.add_argument("--strength", type=float, default=0.8)
     ap.add_argument("--fidelity", type=float, default=0.7)
-    ap.add_argument("--upscale", action="store_true")
+    ap.add_argument("--upscale", action="store_true", help="Upscale x2")
+    ap.add_argument("--final-height", type=int, default=0, help="Altura final, ex. 1080, 1440, 2160")
+    ap.add_argument("--no-occlusion", action="store_true", help="Desliga a máscara de oclusão")
+    ap.add_argument("--region", action="store_true", help="Máscara de pele (bordas mais naturais)")
+    ap.add_argument("--color-fix", action="store_true", help="Corrige cor/luz da cara")
     ap.add_argument("--no-watermark", action="store_true")
     ap.add_argument("--crf", type=int, default=16)
     ap.add_argument("--device", choices=["auto", "cuda", "directml", "cpu"], default="auto")
@@ -41,7 +45,13 @@ def main():
         sys.exit("Nenhuma cara encontrada nas fotos de origem.")
     latent = eng.swapper.latent(emb)
     s = Settings(target_mode=a.mode, swap_boost=a.boost, enhancer=a.enhancer, enhancer_strength=a.strength,
-                 codeformer_fidelity=a.fidelity, upscale=a.upscale, watermark=not a.no_watermark, crf=a.crf)
+                 codeformer_fidelity=a.fidelity, upscale=a.upscale, watermark=not a.no_watermark, crf=a.crf,
+                 occlusion_mask=not a.no_occlusion, region_mask=a.region, color_fix=a.color_fix)
+    if a.final_height:
+        is_img = os.path.splitext(a.target)[1].lower() in IMAGE_EXT
+        h = read(a.target).shape[0] if is_img else probe(a.target)["height"]
+        s.upscale, s.upscale_model = plan_upscale(h, a.final_height)
+        s.target_height = a.final_height
     print(f"Dispositivo: {models.active_device()} · fotos de origem com cara: {n}")
 
     if os.path.splitext(a.target)[1].lower() in IMAGE_EXT:

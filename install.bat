@@ -27,7 +27,7 @@ echo A instalar dependencias (pode demorar varios minutos)...
 pip install -r requirements.txt || (echo [ERRO] Falhou a instalacao & pause & exit /b 1)
 echo.
 echo A descarregar os modelos de IA (~1,5 GB)...
-python -c "from faceswap.core import models; [models.download(n) for n in models.MODELS]"
+python -c "from faceswap.core import models; [models.download(n) for n in models.needed_models()]"
 echo.
 python -c "import onnxruntime as o; p=o.get_available_providers(); print('Dispositivos:', p); print('GPU NVIDIA OK!' if 'CUDAExecutionProvider' in p else 'AVISO: CUDA nao disponivel - corre install_directml.bat')"
 echo.

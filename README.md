@@ -31,11 +31,26 @@ Tem botão de comparação antes/depois.
 > Se no fim da instalação aparecer *"CUDA não disponível"*, corre **`install_directml.bat`** (funciona em qualquer placa via DirectX 12, um pouco mais lento).
 
 ## Perfis de qualidade
-| Perfil | Troca | Melhoria | Tempo estimado (90 s, 1080p, RTX 5060) |
-|---|---|---|---|
-| Rápido | 128 px | — | ~2–5 min |
-| Equilibrado | 256 px | GFPGAN | ~5–10 min |
-| Máxima qualidade | 512 px | CodeFormer | ~12–25 min |
+| Perfil | Troca | Melhoria | Máscaras | Tempo estimado (90 s, 1080p, RTX 5060) |
+|---|---|---|---|---|
+| Rápido | 128 px | — | — | ~1–2 min |
+| Equilibrado | 256 px | GFPGAN | oclusão | ~2–4 min |
+| Máxima qualidade | 512 px | GFPGAN | oclusão + pele + cor | ~5–10 min |
+
+A opção **Resolução final** (2x / 1080p / 1440p / 4K) faz upscale **ao mesmo tempo** que a troca:
+primeiro aumenta a resolução, depois troca e restaura a cara já na resolução final (mais detalhe).
+
+### Velocidade
+- Vários frames processados em paralelo (deteção sequencial + troca/restauro/upscale em 4 threads).
+- Na GPU usa modelos **FP16** (InSwapper, Real-ESRGAN) – ~2x mais rápidos, mesma qualidade.
+- Grava o vídeo com **NVENC** (codificador da placa NVIDIA) quando disponível.
+- cuDNN em modo *exhaustive*: o 1.º vídeo demora ~1 min a mais, os seguintes ficam mais rápidos.
+
+### Realismo
+- **Máscara de oclusão (XSeg):** mãos, cabelo e objetos à frente da cara ficam por cima.
+- **Máscara de pele (BiSeNet):** só troca pele/olhos/nariz/boca – cabelo e orelhas originais intactos.
+- **Correção de cor:** iguala tom de pele e luz à cena.
+- **Estabilização One-Euro:** sem tremor quando a cara está parada, sem atraso em movimentos rápidos.
 
 ## Linha de comandos (opcional)
 ```bat
@@ -59,6 +74,8 @@ O **código** desta app é teu. Mas os **modelos de IA** têm licenças própria
 | Modelo | Licença | Uso comercial |
 |---|---|---|
 | InSwapper, SCRFD, ArcFace (InsightFace) | Investigação / não comercial | ❌ Não |
+| XSeg (DeepFaceLab) | GPL-3.0 | ⚠️ Sim, mas obriga a abrir o código |
+| BiSeNet (face parsing) | MIT | ✅ Sim |
 | CodeFormer | S-Lab (não comercial) | ❌ Não |
 | GFPGAN 1.4 | Apache 2.0 | ✅ Sim |
 | Real-ESRGAN | BSD-3 | ✅ Sim |

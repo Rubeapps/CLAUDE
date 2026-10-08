@@ -25,10 +25,11 @@ _engine_lock = threading.Lock()
 _cancel = threading.Event()
 
 PRESETS = {
-    "Rápido": dict(boost=1, enhancer="Nenhum", upscale=False),
-    "Equilibrado": dict(boost=2, enhancer="GFPGAN", upscale=False),
-    "Máxima qualidade": dict(boost=4, enhancer="CodeFormer", upscale=False),
+    "Rápido": dict(boost=1, enhancer="Nenhum", strength=0.7, occlusion=False, region=False, color=False),
+    "Equilibrado": dict(boost=2, enhancer="GFPGAN", strength=0.7, occlusion=True, region=False, color=False),
+    "Máxima qualidade": dict(boost=4, enhancer="GFPGAN", strength=0.8, occlusion=True, region=True, color=True),
 }
+FINAL_RES = {"Original": 0, "2x (dobro)": -2, "1080p": 1080, "1440p (2K)": 1440, "2160p (4K)": 2160}
 ENHANCERS = {"Nenhum": "none", "GFPGAN": "gfpgan", "CodeFormer": "codeformer"}
 MODES = {"Maior cara do vídeo": "largest", "Todas as caras": "all", "Só uma pessoa (referência)": "reference"}
 
@@ -69,15 +70,26 @@ def source_latent(files, eng):
 
 
 def build_settings(mode, ref_time, ref_index, ref_threshold, boost, enhancer, enh_strength, cf_fidelity,
-                   upscale, smoothing, mask_blur, pad_top, pad_bottom, det_threshold, watermark, crf,
-                   max_height, trim_start, video_path, eng):
+                   final_res, occlusion, region, color_fix, smooth_strength, smoothing, mask_blur, pad_top,
+                   pad_bottom, det_threshold, watermark, crf, max_height, trim_start, video_path, eng):
     s = Settings(
         target_mode=MODES[mode], reference_threshold=ref_threshold, swap_boost=int(boost.split("x")[0]),
         mask_blur=mask_blur, mask_padding=(pad_top, 0, pad_bottom, 0), enhancer=ENHANCERS[enhancer],
-        enhancer_strength=enh_strength, codeformer_fidelity=cf_fidelity, upscale=upscale, smoothing=smoothing,
+        enhancer_strength=enh_strength, codeformer_fidelity=cf_fidelity, smoothing=smoothing,
+        smoothing_strength=smooth_strength, occlusion_mask=occlusion, region_mask=region, color_fix=color_fix,
         det_threshold=det_threshold, watermark=watermark, crf=int(crf),
         max_height={"Original": 0, "1080p": 1080, "720p": 720}[max_height], trim_start=trim_start,
     )
+    target = FINAL_RES[final_res]
+    if target and video_path:
+        h = probe(video_path)["height"]
+        if s.max_height:
+            h = min(h, s.max_height)
+        if target < 0:  # 2x
+            s.upscale, s.upscale_model = True, "esrgan_x2"
+        else:
+            s.upscale, s.upscale_model = plan_upscale(h, target)
+            s.target_height = target if s.upscale else 0
     if s.target_mode == "reference":
         if not video_path:
             raise gr.Error("Escolhe primeiro o vídeo.")
@@ -129,7 +141,6 @@ def preview(files, video, t, consent, *opts, progress=gr.Progress()):
     eng = engine(progress)
     latent, n = source_latent(files, eng)
     s = build_settings(*opts, video, eng)
-    s.upscale = False  # pré-visualização rápida
     frame = read_frame(video, t)
     out = eng.process_image(frame, latent, s)
     return out[..., ::-1], f"Pré-visualização pronta ({n} foto(s) de origem usada(s)). Dispositivo: {models.active_device()}"
@@ -173,7 +184,8 @@ def swap_image(files, target, consent, boost, enhancer, enh_strength, cf_fidelit
     latent, _ = source_latent(files, eng)
     s = Settings(target_mode="all" if mode == "Todas as caras" else "largest", swap_boost=int(boost.split("x")[0]),
                  enhancer=ENHANCERS[enhancer], enhancer_strength=enh_strength, codeformer_fidelity=cf_fidelity,
-                 upscale=upscale, watermark=watermark, smoothing=False)
+                 upscale=upscale, watermark=watermark, smoothing=False, occlusion_mask=True, region_mask=True,
+                 color_fix=True)
     out = eng.process_image(imread(target), latent, s)
     os.makedirs(OUT_DIR, exist_ok=True)
     path = os.path.join(OUT_DIR, f"faceswap_{time.strftime('%Y%m%d_%H%M%S')}.png")
@@ -238,7 +250,8 @@ def upscale_video(video, target, restore, strength, fidelity, crf, progress=gr.P
 
 def apply_preset(name):
     p = PRESETS[name]
-    return BOOST_CHOICES[{1: 0, 2: 1, 4: 2}[p["boost"]]], p["enhancer"], p["upscale"]
+    return (BOOST_CHOICES[{1: 0, 2: 1, 4: 2}[p["boost"]]], p["enhancer"], p["strength"],
+            p["occlusion"], p["region"], p["color"])
 
 
 # ---------------- interface ----------------
@@ -292,15 +305,21 @@ def ui():
                     with gr.Row():
                         boost = gr.Dropdown(boost_choices, value=boost_choices[1], label="Resolução da troca")
                         enhancer = gr.Dropdown(list(ENHANCERS), value="GFPGAN", label="Melhoria da cara")
-                        upscale = gr.Checkbox(value=False, label="Upscale do vídeo x2 (Real-ESRGAN · lento)")
+                        final_res = gr.Dropdown(list(FINAL_RES), value="Original",
+                                                label="Resolução final (upscale ao mesmo tempo)")
                     with gr.Row():
-                        enh_strength = gr.Slider(0, 1, value=0.8, step=0.05, label="Força da melhoria")
+                        occlusion = gr.Checkbox(value=True, label="Máscara de oclusão (mãos/cabelo/objetos à frente)")
+                        region = gr.Checkbox(value=False, label="Máscara de pele (bordas mais naturais)")
+                        color_fix = gr.Checkbox(value=False, label="Corrigir cor/luz da cara")
+                    with gr.Row():
+                        enh_strength = gr.Slider(0, 1, value=0.7, step=0.05, label="Força da melhoria")
                         cf_fidelity = gr.Slider(0, 1, value=0.7, step=0.05,
                                                 label="CodeFormer: fidelidade (alto = mais parecido, baixo = mais nítido)")
 
                 with gr.Accordion("⚙️ Avançado", open=False):
                     with gr.Row():
                         smoothing = gr.Checkbox(value=True, label="Estabilização anti-tremor")
+                        smooth_strength = gr.Slider(0.3, 2, value=1, step=0.1, label="Força da estabilização")
                         watermark = gr.Checkbox(value=True, label="Marca de água 'Gerado por IA'")
                         max_height = gr.Dropdown(["Original", "1080p", "720p"], value="Original", label="Resolução máxima")
                     with gr.Row():
@@ -312,10 +331,11 @@ def ui():
                         crf = gr.Slider(10, 28, value=16, step=1, label="Compressão (menor = melhor qualidade)")
                         trim_start = gr.Number(value=0, minimum=0, label="Começar no segundo")
 
-                opts = [mode, ref_time, ref_index, ref_threshold, boost, enhancer, enh_strength, cf_fidelity, upscale,
-                        smoothing, mask_blur, pad_top, pad_bottom, det_threshold, watermark, crf, max_height, trim_start]
+                opts = [mode, ref_time, ref_index, ref_threshold, boost, enhancer, enh_strength, cf_fidelity, final_res,
+                        occlusion, region, color_fix, smooth_strength, smoothing, mask_blur, pad_top, pad_bottom,
+                        det_threshold, watermark, crf, max_height, trim_start]
 
-                preset.change(apply_preset, preset, [boost, enhancer, upscale])
+                preset.change(apply_preset, preset, [boost, enhancer, enh_strength, occlusion, region, color_fix])
                 video.change(on_video_change, video, [preview_t, ref_time, video_info])
                 btn_analyse.click(analyse_faces, [video, ref_time, det_threshold], [preview_img, status])
                 btn_preview.click(preview, [src_files, video, preview_t, consent] + opts, [preview_img, status])
@@ -399,11 +419,18 @@ HELP = """
 ### Tempos aproximados (RTX 5060, vídeo 1080p de 90s a 30fps)
 | Perfil | Tempo |
 |---|---|
-| Rápido | ~2–5 min |
-| Equilibrado | ~5–10 min |
-| Máxima qualidade | ~12–25 min |
+| Rápido | ~1–2 min |
+| Equilibrado | ~2–4 min |
+| Máxima qualidade | ~5–10 min |
+| + Resolução final 1440p/4K | soma ~5–15 min |
 
-*Estimativas – o primeiro arranque demora mais porque descarrega os modelos (~1,5 GB).*
+*Estimativas. O 1.º vídeo de cada sessão demora mais ~1 min (a placa testa os algoritmos mais rápidos).*
+
+### O que faz cada opção de realismo
+- **Máscara de oclusão:** se uma mão, cabelo ou objeto passar à frente da cara, fica por cima (não é "apagado").
+- **Máscara de pele:** só troca pele, olhos, nariz e boca – o cabelo e as orelhas originais ficam intactos, bordas invisíveis.
+- **Corrigir cor/luz:** iguala o tom de pele e a luz da cara nova à do vídeo.
+- **Estabilização:** filtro One-Euro – elimina tremor quando a cara está parada sem atrasar movimentos rápidos.
 
 ### Uso responsável
 Usa apenas caras de pessoas que deram autorização. Criar deepfakes para enganar, difamar, assediar ou criar conteúdo íntimo sem consentimento é ilegal em Portugal/UE e pode ser crime.

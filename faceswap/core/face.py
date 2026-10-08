@@ -160,3 +160,63 @@ class FaceAnalyser:
 
 def similarity(a, b):
     return float(np.dot(a, b))
+
+
+class OneEuro:
+    """Filtro One-Euro: suaviza muito quando a cara está parada e quase nada em movimentos rápidos.
+
+    Elimina o tremor dos pontos sem criar atraso ("efeito máscara a arrastar").
+    """
+
+    def __init__(self, min_cutoff=1.0, beta=0.05, d_cutoff=1.0):
+        self.min_cutoff, self.beta, self.d_cutoff = min_cutoff, beta, d_cutoff
+        self.x = None
+        self.dx = None
+
+    @staticmethod
+    def _alpha(cutoff, dt):
+        tau = 1.0 / (2 * np.pi * cutoff)
+        return 1.0 / (1.0 + tau / dt)
+
+    def __call__(self, x, dt, scale):
+        if self.x is None:
+            self.x, self.dx = x.copy(), np.zeros_like(x)
+            return x
+        dx = (x - self.x) / dt / scale  # velocidade normalizada pelo tamanho da cara
+        a_d = self._alpha(self.d_cutoff, dt)
+        self.dx = a_d * dx + (1 - a_d) * self.dx
+        cutoff = self.min_cutoff + self.beta * np.abs(self.dx) * 100
+        a = self._alpha(cutoff, dt)
+        self.x = a * x + (1 - a) * self.x
+        return self.x
+
+
+class FaceTracker:
+    """Segue cada cara entre frames e estabiliza os 5 pontos com One-Euro."""
+
+    def __init__(self, fps, strength=1.0):
+        self.dt = 1.0 / max(fps, 1)
+        self.min_cutoff = 1.5 / max(strength, 0.05)
+        self.tracks = []  # [centro, filtro, frames_sem_ver]
+
+    def update(self, faces):
+        used = set()
+        for f in faces:
+            c = f.kps.mean(0)
+            best, dist = None, f.size * 0.5
+            for i, t in enumerate(self.tracks):
+                d = np.linalg.norm(t[0] - c)
+                if i not in used and d < dist:
+                    best, dist = i, d
+            if best is None:
+                self.tracks.append([c, OneEuro(self.min_cutoff), 0])
+                best = len(self.tracks) - 1
+            used.add(best)
+            t = self.tracks[best]
+            f.kps = t[1](f.kps.astype(np.float64), self.dt, max(f.size, 1.0)).astype(np.float32)
+            t[0], t[2] = f.kps.mean(0), 0
+        for i, t in enumerate(self.tracks):
+            if i not in used:
+                t[2] += 1
+        self.tracks = [t for t in self.tracks if t[2] < 5]
+        return faces

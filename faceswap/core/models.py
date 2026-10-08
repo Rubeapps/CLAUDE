@@ -8,17 +8,22 @@ import onnxruntime as ort
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODELS_DIR = os.path.join(ROOT, "models")
-BASE_URL = "https://github.com/facefusion/facefusion-assets/releases/download/models-3.0.0/"
+BASE_URL = "https://github.com/facefusion/facefusion-assets/releases/download/"
 
-# nome -> (ficheiro, tamanho aproximado em MB, descrição)
+# nome -> (ficheiro, release, tamanho aproximado em MB, descrição)
 MODELS = {
-    "detector": ("scrfd_2.5g.onnx", 3, "Deteção de caras (SCRFD)"),
-    "recognizer": ("arcface_w600k_r50.onnx", 166, "Identidade da cara (ArcFace)"),
-    "swapper": ("inswapper_128.onnx", 530, "Troca de cara (InSwapper)"),
-    "gfpgan": ("gfpgan_1.4.onnx", 325, "Restauro de cara (GFPGAN 1.4)"),
-    "codeformer": ("codeformer.onnx", 360, "Restauro de cara (CodeFormer)"),
-    "esrgan_x2": ("real_esrgan_x2.onnx", 66, "Aumento de resolução (Real-ESRGAN x2)"),
-    "esrgan_x4": ("real_esrgan_x4.onnx", 64, "Aumento de resolução (Real-ESRGAN x4)"),
+    "detector": ("scrfd_2.5g.onnx", "models-3.0.0", 3, "Deteção de caras (SCRFD)"),
+    "recognizer": ("arcface_w600k_r50.onnx", "models-3.0.0", 166, "Identidade da cara (ArcFace)"),
+    "swapper": ("inswapper_128.onnx", "models-3.0.0", 530, "Troca de cara (InSwapper)"),
+    "swapper_fp16": ("inswapper_128_fp16.onnx", "models-3.0.0", 265, "Troca de cara (InSwapper FP16)"),
+    "gfpgan": ("gfpgan_1.4.onnx", "models-3.0.0", 325, "Restauro de cara (GFPGAN 1.4)"),
+    "codeformer": ("codeformer.onnx", "models-3.0.0", 360, "Restauro de cara (CodeFormer)"),
+    "occluder": ("xseg_1.onnx", "models-3.1.0", 67, "Máscara de oclusão (XSeg)"),
+    "parser": ("bisenet_resnet_34.onnx", "models-3.0.0", 90, "Máscara de pele (BiSeNet)"),
+    "esrgan_x2": ("real_esrgan_x2.onnx", "models-3.0.0", 66, "Aumento de resolução (Real-ESRGAN x2)"),
+    "esrgan_x2_fp16": ("real_esrgan_x2_fp16.onnx", "models-3.0.0", 35, "Aumento de resolução (Real-ESRGAN x2 FP16)"),
+    "esrgan_x4": ("real_esrgan_x4.onnx", "models-3.0.0", 66, "Aumento de resolução (Real-ESRGAN x4)"),
+    "esrgan_x4_fp16": ("real_esrgan_x4_fp16.onnx", "models-3.0.0", 35, "Aumento de resolução (Real-ESRGAN x4 FP16)"),
 }
 
 _sessions = {}
@@ -35,10 +40,10 @@ def download(name, progress=None):
     if os.path.isfile(path) and os.path.getsize(path) > 0:
         return path
     os.makedirs(MODELS_DIR, exist_ok=True)
-    filename, size_mb, desc = MODELS[name]
+    filename, release, size_mb, desc = MODELS[name]
     tmp = path + ".part"
     print(f"[modelos] A descarregar {filename} (~{size_mb} MB)...")
-    with urllib.request.urlopen(BASE_URL + filename) as resp, open(tmp, "wb") as out:
+    with urllib.request.urlopen(f"{BASE_URL}{release}/{filename}") as resp, open(tmp, "wb") as out:
         total = int(resp.headers.get("Content-Length", 0)) or size_mb * 1024 * 1024
         done = 0
         while True:
@@ -82,7 +87,8 @@ def _providers():
     want = _preferred or "auto"
     order = []
     if want in ("auto", "cuda") and "CUDAExecutionProvider" in avail:
-        order.append(("CUDAExecutionProvider", {"cudnn_conv_algo_search": "DEFAULT"}))
+        # EXHAUSTIVE: procura o algoritmo mais rápido para cada tamanho (os tamanhos repetem-se em vídeo)
+        order.append(("CUDAExecutionProvider", {"cudnn_conv_algo_search": "EXHAUSTIVE"}))
     if want in ("auto", "directml") and "DmlExecutionProvider" in avail:
         order.append("DmlExecutionProvider")
     order.append("CPUExecutionProvider")
@@ -92,8 +98,27 @@ def _providers():
 _cuda_ready = False
 
 
+def use_gpu():
+    want = _preferred or "auto"
+    avail = available_providers()
+    return (want in ("auto", "cuda") and "CUDAExecutionProvider" in avail) or \
+           (want in ("auto", "directml") and "DmlExecutionProvider" in avail)
+
+
+def resolve(name):
+    """Na GPU usa a versão FP16 (≈2x mais rápida, mesma qualidade visual) quando existe."""
+    fp16 = name + "_fp16"
+    return fp16 if fp16 in MODELS and use_gpu() else name
+
+
+def needed_models():
+    base = ["detector", "recognizer", "swapper", "gfpgan", "codeformer", "occluder", "parser", "esrgan_x2", "esrgan_x4"]
+    return [resolve(n) for n in base]
+
+
 def session(name, progress=None):
     global _cuda_ready
+    name = resolve(name)
     with _lock:
         if name in _sessions:
             return _sessions[name]
