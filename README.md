@@ -54,6 +54,11 @@ primeiro aumenta a resolução, depois troca e restaura a cara já na resoluçã
 - Grava o vídeo com **NVENC** (codificador da placa NVIDIA) quando disponível.
 - cuDNN em modo *exhaustive*: o 1.º vídeo demora ~1 min a mais, os seguintes ficam mais rápidos.
 
+### Cara + cabelo
+Opção **"O que trocar: Cara + cabelo"** – além da cara, copia a **cor** do cabelo da foto (ruivo, castanho, loiro…)
+para o cabelo do vídeo, em cada frame. O penteado e o comprimento continuam os do vídeo (trocar o penteado num vídeo
+em movimento ainda não é possível com qualidade). Em cabelo muito escuro o efeito é mais discreto, como na vida real.
+
 ### Realismo
 - **Máscara de oclusão (XSeg):** mãos, cabelo e objetos à frente da cara ficam por cima.
 - **Máscara de pele (BiSeNet):** só troca pele/olhos/nariz/boca – cabelo e orelhas originais intactos.

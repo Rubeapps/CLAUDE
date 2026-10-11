@@ -29,6 +29,7 @@ PRESETS = {
     "Equilibrado": dict(boost=2, enhancer="GFPGAN", strength=0.7, occlusion=True, region=False, color=False),
     "Máxima qualidade": dict(boost=2, enhancer="GFPGAN", strength=0.8, occlusion=True, region=True, color=True),
 }
+SWAP_WHAT = ["Só a cara", "Cara + cabelo"]
 UP_MODELS = {"Rápido · Clear Reality (recomendado)": "fast", "Máximo · Real-ESRGAN (muito lento)": "max"}
 FINAL_RES = {"Original": 0, "2x (dobro)": -2, "1080p": 1080, "1440p (2K)": 1440, "2160p (4K)": 2160}
 ENHANCERS = {"Nenhum": "none", "GFPGAN": "gfpgan", "CodeFormer": "codeformer"}
@@ -70,9 +71,22 @@ def source_latent(files, eng):
     return eng.swapper.latent(emb), n
 
 
+def add_hair(s, files, eng):
+    """Modo "Cara + cabelo": lê a cor do cabelo nas fotos de origem."""
+    if not s.hair_color:
+        return ""
+    paths = [f if isinstance(f, str) else f.name for f in files]
+    s.hair_stats = eng.hair.source_stats([imread(p) for p in paths], eng.analyser)
+    if s.hair_stats is None:
+        s.hair_color = False
+        return " ⚠️ Não encontrei cabelo visível na(s) foto(s): só a cara foi trocada."
+    return " 💇 Cor do cabelo copiada da foto."
+
+
 def build_settings(mode, ref_time, ref_index, ref_threshold, boost, enhancer, enh_strength, cf_fidelity,
                    final_res, up_quality, occlusion, region, color_fix, smooth_strength, smoothing, mask_blur, pad_top,
-                   pad_bottom, det_threshold, watermark, crf, max_height, trim_start, video_path, eng):
+                   pad_bottom, det_threshold, watermark, crf, max_height, trim_start, swap_what, hair_strength,
+                   video_path, eng):
     s = Settings(
         target_mode=MODES[mode], reference_threshold=ref_threshold, swap_boost=int(boost.split("x")[0]),
         mask_blur=mask_blur, mask_padding=(pad_top, 0, pad_bottom, 0), enhancer=ENHANCERS[enhancer],
@@ -80,6 +94,7 @@ def build_settings(mode, ref_time, ref_index, ref_threshold, boost, enhancer, en
         smoothing_strength=smooth_strength, occlusion_mask=occlusion, region_mask=region, color_fix=color_fix,
         det_threshold=det_threshold, watermark=watermark, crf=int(crf),
         max_height={"Original": 0, "1080p": 1080, "720p": 720}[max_height], trim_start=trim_start,
+        hair_color=swap_what == SWAP_WHAT[1], hair_strength=hair_strength,
     )
     target = FINAL_RES[final_res]
     if target and video_path:
@@ -141,9 +156,10 @@ def preview(files, video, t, consent, *opts, progress=gr.Progress()):
     eng = engine(progress)
     latent, n = source_latent(files, eng)
     s = build_settings(*opts, video, eng)
+    hair_msg = add_hair(s, files, eng)
     frame = read_frame(video, t)
     out = eng.process_image(frame, latent, s)
-    return out[..., ::-1], f"Pré-visualização pronta ({n} foto(s) de origem usada(s)). Dispositivo: {models.active_device()}"
+    return out[..., ::-1], f"Pré-visualização pronta ({n} foto(s) de origem usada(s)). Dispositivo: {models.active_device()}{hair_msg}"
 
 
 def generate(files, video, consent, *opts, progress=gr.Progress()):
@@ -154,6 +170,7 @@ def generate(files, video, consent, *opts, progress=gr.Progress()):
     eng = engine(progress)
     latent, _ = source_latent(files, eng)
     s = build_settings(*opts, video, eng)
+    hair_msg = add_hair(s, files, eng)
     src = safe_copy(video)
     os.makedirs(OUT_DIR, exist_ok=True)
     dst = os.path.join(OUT_DIR, f"faceswap_{time.strftime('%Y%m%d_%H%M%S')}.mp4")
@@ -167,7 +184,7 @@ def generate(files, video, consent, *opts, progress=gr.Progress()):
             os.remove(src)
         except OSError:
             pass
-    return dst, f"✅ Concluído em {time.time() - t0:.0f}s · guardado em: {dst}"
+    return dst, f"✅ Concluído em {time.time() - t0:.0f}s · guardado em: {dst}{hair_msg}"
 
 
 def cancel():
@@ -176,7 +193,7 @@ def cancel():
 
 
 def swap_image(files, target, consent, boost, enhancer, enh_strength, cf_fidelity, upscale, mode, watermark,
-               progress=gr.Progress()):
+               swap_what, progress=gr.Progress()):
     check_consent(consent)
     if target is None:
         raise gr.Error("Carrega a imagem de destino.")
@@ -185,7 +202,8 @@ def swap_image(files, target, consent, boost, enhancer, enh_strength, cf_fidelit
     s = Settings(target_mode="all" if mode == "Todas as caras" else "largest", swap_boost=int(boost.split("x")[0]),
                  enhancer=ENHANCERS[enhancer], enhancer_strength=enh_strength, codeformer_fidelity=cf_fidelity,
                  upscale=upscale, watermark=watermark, smoothing=False, occlusion_mask=True, region_mask=True,
-                 color_fix=True)
+                 color_fix=True, hair_color=swap_what == SWAP_WHAT[1])
+    add_hair(s, files, eng)
     out = eng.process_image(imread(target), latent, s)
     os.makedirs(OUT_DIR, exist_ok=True)
     path = os.path.join(OUT_DIR, f"faceswap_{time.strftime('%Y%m%d_%H%M%S')}.png")
@@ -276,6 +294,8 @@ def ui():
                                             file_count="multiple", file_types=["image"], type="filepath")
                         video = gr.Video(label=f"2. O teu vídeo (até {MAX_SECONDS}s)", sources=["upload"])
                         video_info = gr.Markdown("Sem vídeo.")
+                        swap_what = gr.Radio(SWAP_WHAT, value=SWAP_WHAT[0], label="O que trocar",
+                                             info="'Cara + cabelo' copia a cor do cabelo da foto (o penteado é o do vídeo)")
                         preset = gr.Radio(list(PRESETS), value="Equilibrado", label="Perfil de qualidade")
                         consent = gr.Checkbox(label="Confirmo que tenho autorização da pessoa cuja cara vou usar "
                                                     "e que não vou usar o resultado para enganar ou prejudicar ninguém.")
@@ -309,6 +329,7 @@ def ui():
                         occlusion = gr.Checkbox(value=True, label="Máscara de oclusão (mãos/cabelo/objetos à frente)")
                         region = gr.Checkbox(value=False, label="Máscara de pele (bordas mais naturais)")
                         color_fix = gr.Checkbox(value=False, label="Corrigir cor/luz da cara")
+                        hair_strength = gr.Slider(0.3, 1, value=0.85, step=0.05, label="Força da cor do cabelo")
                     with gr.Row():
                         enh_strength = gr.Slider(0, 1, value=0.7, step=0.05, label="Força da melhoria")
                         cf_fidelity = gr.Slider(0, 1, value=0.7, step=0.05,
@@ -331,7 +352,7 @@ def ui():
 
                 opts = [mode, ref_time, ref_index, ref_threshold, boost, enhancer, enh_strength, cf_fidelity, final_res,
                         up_quality, occlusion, region, color_fix, smooth_strength, smoothing, mask_blur, pad_top, pad_bottom,
-                        det_threshold, watermark, crf, max_height, trim_start]
+                        det_threshold, watermark, crf, max_height, trim_start, swap_what, hair_strength]
 
                 preset.change(apply_preset, preset, [boost, enhancer, enh_strength, occlusion, region, color_fix])
                 video.change(on_video_change, video, [preview_t, ref_time, video_info])
@@ -348,6 +369,7 @@ def ui():
                                         file_types=["image"], type="filepath")
                         i_tgt = gr.Image(label="Imagem de destino", type="filepath")
                         i_mode = gr.Radio(["Maior cara", "Todas as caras"], value="Maior cara", label="Caras a substituir")
+                        i_what = gr.Radio(SWAP_WHAT, value=SWAP_WHAT[0], label="O que trocar")
                         with gr.Row():
                             i_boost = gr.Dropdown(boost_choices, value=boost_choices[2], label="Resolução da troca")
                             i_enh = gr.Dropdown(list(ENHANCERS), value="CodeFormer", label="Melhoria da cara")
@@ -362,7 +384,7 @@ def ui():
                     with gr.Column():
                         i_out = gr.Image(label="Resultado", interactive=False)
                         i_file = gr.File(label="Download (PNG)")
-                i_go.click(swap_image, [i_src, i_tgt, i_consent, i_boost, i_enh, i_str, i_fid, i_up, i_mode, i_wm],
+                i_go.click(swap_image, [i_src, i_tgt, i_consent, i_boost, i_enh, i_str, i_fid, i_up, i_mode, i_wm, i_what],
                            [i_out, i_file])
 
             # ===== MELHORAR QUALIDADE =====
@@ -430,6 +452,7 @@ HELP = """
 - **Máscara de oclusão:** se uma mão, cabelo ou objeto passar à frente da cara, fica por cima (não é "apagado").
 - **Máscara de pele:** só troca pele, olhos, nariz e boca – o cabelo e as orelhas originais ficam intactos, bordas invisíveis.
 - **Corrigir cor/luz:** iguala o tom de pele e a luz da cara nova à do vídeo.
+- **Cara + cabelo:** além da cara, copia a **cor** do cabelo da foto (ex.: ruivo, castanho, loiro). O penteado e o comprimento continuam os do vídeo. Fica mais natural entre tons próximos; de preto para loiro muito claro pode parecer tingido.
 - **Estabilização:** filtro One-Euro – elimina tremor quando a cara está parada sem atrasar movimentos rápidos.
 
 ### Uso responsável

@@ -14,7 +14,7 @@ import numpy as np
 
 from . import models
 from .face import Face, FaceAnalyser, FaceTracker, similarity
-from .processors import FaceEnhancer, FaceMasker, FaceSwapper, Upscaler
+from .processors import FaceEnhancer, FaceMasker, FaceSwapper, HairColor, Upscaler
 
 MAX_SECONDS = 90
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
@@ -40,6 +40,9 @@ class Settings:
     occlusion_mask: bool = True           # não pinta por cima de mãos/cabelo/objetos
     region_mask: bool = False             # só troca pele/olhos/nariz/boca
     color_fix: bool = False               # iguala cor/luz da cara nova à original
+    hair_color: bool = False              # "Cara + cabelo": copia a cor do cabelo da foto
+    hair_strength: float = 0.85
+    hair_stats: tuple = None              # (média, desvio) LAB do cabelo da foto
     det_threshold: float = 0.5
     watermark: bool = True
     crf: int = 16                         # qualidade H.264 (menor = melhor)
@@ -105,6 +108,7 @@ class Engine:
         self.analyser = FaceAnalyser(progress)
         self.swapper = FaceSwapper(progress)
         self.masker = FaceMasker(progress)
+        self.hair = HairColor(self.masker)
         self._enhancers = {}
         self._upscalers = {}
         self._progress = progress
@@ -144,7 +148,7 @@ class Engine:
         dummy = np.zeros((256, 256, 3), np.uint8)
         if s.occlusion_mask:
             self.masker.occlusion(dummy)
-        if s.region_mask and s.swap:
+        if (s.region_mask and s.swap) or s.hair_color:
             self.masker.region(dummy)
 
     # ---------- seleção das caras ----------
@@ -197,7 +201,11 @@ class Engine:
             enh = self.enhancer(s.enhancer)
             for f in faces:
                 out = enh.enhance(out, f, s.enhancer_strength, s.codeformer_fidelity, self.masker, s.occlusion_mask)
-        self._tick("restauro", t)
+        t = self._tick("restauro", t)
+        if s.hair_color and s.hair_stats is not None:
+            for f in faces:
+                out = self.hair.apply(out, f, s.hair_stats, s.hair_strength)
+            self._tick("cabelo", t)
         if s.watermark:
             out = add_watermark(out)
         return out

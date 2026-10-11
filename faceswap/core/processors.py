@@ -43,15 +43,86 @@ class FaceMasker:
         m = self._occ.run(None, {self._occ.get_inputs()[0].name: x})[0][0, :, :, 0]
         return _soften(cv2.resize(m.clip(0, 1), (size, size)))
 
-    def region(self, crop):
+    def parse(self, crop):
+        """Segmentação da cara (BiSeNet, 19 classes) a 512x512."""
         if self._parser is None:
             self._parser = models.session("parser", self._progress)
-        size = crop.shape[0]
         x = cv2.resize(crop, (512, 512))[..., ::-1].astype(np.float32) / 255.0
         x = ((x - IMAGENET_MEAN) / IMAGENET_STD).transpose(2, 0, 1)[None]
-        seg = self._parser.run(None, {self._parser.get_inputs()[0].name: x})[0][0].argmax(0)
-        m = np.isin(seg, FACE_REGIONS).astype(np.float32)
+        return self._parser.run(None, {self._parser.get_inputs()[0].name: x})[0][0].argmax(0)
+
+    def region(self, crop):
+        size = crop.shape[0]
+        m = np.isin(self.parse(crop), FACE_REGIONS).astype(np.float32)
         return _soften(cv2.resize(m, (size, size)))
+
+
+HAIR_CLASS = 17
+
+
+def _edge_fade(size, frac=0.08):
+    r = np.minimum(np.arange(size), np.arange(size)[::-1]) / (size * frac)
+    r = np.clip(r, 0, 1).astype(np.float32)
+    return np.minimum.outer(r, r)
+
+
+def hair_crop(frame, face, size=512):
+    """Recorte quadrado à volta da cabeça (inclui o cabelo), centrado um pouco acima da cara."""
+    x1, y1, x2, y2 = face.bbox
+    # Recorte grande (3.6x a cara) e centrado mais abaixo para apanhar cabelo comprido até aos ombros
+    side = max(x2 - x1, y2 - y1) * 3.6
+    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2 + (y2 - y1) * 0.35
+    k = size / side
+    M = np.array([[k, 0, size / 2 - k * cx], [0, k, size / 2 - k * cy]], np.float32)
+    crop = cv2.warpAffine(frame, M, (size, size), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    return crop, M
+
+
+class HairColor:
+    """Copia a cor do cabelo da foto de origem para o cabelo do vídeo (o penteado mantém-se)."""
+
+    def __init__(self, masker: FaceMasker):
+        self.masker = masker
+
+    def _hair_mask(self, crop):
+        return (self.masker.parse(crop) == HAIR_CLASS).astype(np.float32)
+
+    def source_stats(self, images, analyser):
+        """Média/desvio da cor do cabelo (LAB) nas fotos de origem. None se não houver cabelo visível."""
+        pixels = []
+        for img in images:
+            faces = analyser.detect(img)
+            if not faces:
+                continue
+            crop, _ = hair_crop(img, max(faces, key=lambda f: f.size))
+            m = cv2.erode(self._hair_mask(crop), np.ones((7, 7), np.uint8)) > 0.5
+            if m.sum() > 800:
+                pixels.append(cv2.cvtColor(crop, cv2.COLOR_BGR2LAB)[m].astype(np.float32))
+        if not pixels:
+            return None
+        px = np.concatenate(pixels)
+        return px.mean(0), px.std(0) + 1e-3
+
+    def apply(self, frame, face, stats, strength=0.85):
+        crop, M = hair_crop(frame, face)
+        m = self._hair_mask(crop)
+        if m.sum() < 500:
+            return frame
+        sel = m > 0.5
+        lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB).astype(np.float32)
+        tm, ts = lab[sel].mean(0), lab[sel].std(0) + 1e-3
+        sm, ss = stats
+        ratio = np.clip(ss / ts, 0.6, 1.4)
+        new = (lab - tm) * ratio + sm
+        # Luminosidade só em parte: mantém as sombras/brilhos reais do cabelo do vídeo
+        new[..., 0] = lab[..., 0] + (new[..., 0] - lab[..., 0]) * 0.5
+        # Cor proporcional ao brilho: nas sombras mais escuras o cabelo fica menos saturado (mais natural)
+        light = np.clip(new[..., 0:1] / 140.0, 0.35, 1.0)
+        new[..., 1:] = 128 + (new[..., 1:] - 128) * light
+        out = cv2.cvtColor(new.clip(0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
+        # Bordas do recorte desvanecem (sem linhas de corte) e o contorno do cabelo fica suave
+        mask = cv2.GaussianBlur(m, (0, 0), 3) * _edge_fade(m.shape[0]) * strength
+        return paste_back(frame, out, mask, M)
 
 
 def match_color(src, ref, mask):
