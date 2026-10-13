@@ -46,24 +46,37 @@ def _pack(sig, sl, tp, atr, exl, exs, flat, ok, trail=0.0, trail_start=0.0,
 # 1) Breakout de tendência (Donchian) com filtro EMA e trailing chandelier
 # ---------------------------------------------------------------------------------
 def trend_breakout(df, symbol, n_break=55, ema_len=200, atr_len=20, sl_atr=2.0,
-                   trail_atr=3.0, tp_r=0.0, n_exit=0, max_bars=0, friday_flat=False):
+                   trail_atr=3.0, tp_r=0.0, n_exit=0, max_bars=0, friday_flat=False,
+                   h_from=0, h_to=24, be_r=0.0, trail_start=0.0, side=0, adx_min=0.0):
+    """side: 0 = compra e venda, 1 = só compra, -1 = só venda.
+    h_from/h_to: horas (servidor) em que um sinal pode ser aceite."""
     o, h, l, c, n, hour, dow = _base(df)
     a = ind.atr(h, l, c, atr_len)
-    e = ind.ema(c, ema_len)
+    e = ind.ema(c, ema_len) if ema_len > 0 else np.full(n, np.nan)
     hh = ind.highest(h, n_break)
     ll = ind.lowest(l, n_break)
+    hours_ok = (hour >= h_from) & (hour < h_to)
+    up = (c > e) if ema_len > 0 else np.ones(n, np.bool_)
+    dn = (c < e) if ema_len > 0 else np.ones(n, np.bool_)
+    if adx_min > 0:
+        ax = ind.adx(h, l, c, 14)
+        up = up & (ax >= adx_min); dn = dn & (ax >= adx_min)
     sig = np.zeros(n, np.int64)
-    sig[(c > hh) & (c > e)] = 1
-    sig[(c < ll) & (c < e)] = -1
+    if side >= 0:
+        sig[(c > hh) & up & hours_ok] = 1
+    if side <= 0:
+        sig[(c < ll) & dn & hours_ok] = -1
     if n_exit > 0:
         xl = c < ind.lowest(l, n_exit)
         xs = c > ind.highest(h, n_exit)
     else:
         xl = np.zeros(n, np.bool_); xs = np.zeros(n, np.bool_)
     flat = _friday_flat(df) if friday_flat else np.zeros(n, np.bool_)
-    ok = ~np.isnan(a) & ~np.isnan(e) & ~np.isnan(hh)
+    ok = ~np.isnan(a) & ~np.isnan(hh)
+    if ema_len > 0:
+        ok &= ~np.isnan(e)
     return _pack(sig, sl_atr * a, tp_r * sl_atr * a, a, xl, xs, flat, ok,
-                 trail=trail_atr, max_bars=max_bars)
+                 trail=trail_atr, trail_start=trail_start, be=be_r, max_bars=max_bars)
 
 
 # ---------------------------------------------------------------------------------
