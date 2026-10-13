@@ -35,11 +35,12 @@ def _friday_flat(df, hour_cut=22):
 
 
 def _pack(sig, sl, tp, atr, exl, exs, flat, ok, trail=0.0, trail_start=0.0,
-          be=0.0, be_lock=0.0, max_bars=0):
+          be=0.0, be_lock=0.0, max_bars=0, trail2=0.0, trail2_start=0.0):
     return dict(sig=sig.astype(np.int64), sl_dist=np.nan_to_num(sl), tp_dist=np.nan_to_num(tp),
                 atr=np.nan_to_num(atr), exit_long=exl, exit_short=exs, flat=flat, entry_ok=ok,
                 trail_mult=float(trail), trail_start_r=float(trail_start), be_r=float(be),
-                be_lock_r=float(be_lock), max_bars=int(max_bars))
+                be_lock_r=float(be_lock), max_bars=int(max_bars), trail2_mult=float(trail2),
+                trail2_start_r=float(trail2_start))
 
 
 # ---------------------------------------------------------------------------------
@@ -47,7 +48,8 @@ def _pack(sig, sl, tp, atr, exl, exs, flat, ok, trail=0.0, trail_start=0.0,
 # ---------------------------------------------------------------------------------
 def trend_breakout(df, symbol, n_break=55, ema_len=200, atr_len=20, sl_atr=2.0,
                    trail_atr=3.0, tp_r=0.0, n_exit=0, max_bars=0, friday_flat=False,
-                   h_from=0, h_to=24, be_r=0.0, trail_start=0.0, side=0, adx_min=0.0):
+                   h_from=0, h_to=24, be_r=0.0, trail_start=0.0, side=0, adx_min=0.0,
+                   trail2_atr=0.0, trail2_start=0.0):
     """side: 0 = compra e venda, 1 = só compra, -1 = só venda.
     h_from/h_to: horas (servidor) em que um sinal pode ser aceite."""
     o, h, l, c, n, hour, dow = _base(df)
@@ -76,7 +78,8 @@ def trend_breakout(df, symbol, n_break=55, ema_len=200, atr_len=20, sl_atr=2.0,
     if ema_len > 0:
         ok &= ~np.isnan(e)
     return _pack(sig, sl_atr * a, tp_r * sl_atr * a, a, xl, xs, flat, ok,
-                 trail=trail_atr, trail_start=trail_start, be=be_r, max_bars=max_bars)
+                 trail=trail_atr, trail_start=trail_start, be=be_r, max_bars=max_bars,
+                 trail2=trail2_atr, trail2_start=trail2_start)
 
 
 # ---------------------------------------------------------------------------------
@@ -182,7 +185,8 @@ def backtest(df, symbol, strat, spread_mult=1.0, slip_pips=0.1, comm_mult=1.0, *
     res = engine.run(o, h, l, c, sp, p["sig"], p["sl_dist"], p["tp_dist"], p["atr"],
                      p["exit_long"], p["exit_short"], p["flat"], p["entry_ok"],
                      p["trail_mult"], p["trail_start_r"], p["be_r"], p["be_lock_r"],
-                     p["max_bars"], slip_pips * spec.pip, spec.comm_frac * comm_mult)
+                     p["max_bars"], slip_pips * spec.pip, spec.comm_frac * comm_mult,
+                     p["trail2_mult"], p["trail2_start_r"])
     ei, xi, d, en, ex, r, risk, reason, mfe, fc, fw = res
     t = df["time"].to_numpy()
     trades = pd.DataFrame(dict(entry_time=t[ei], exit_time=t[xi], dir=d, entry=en, exit=ex,

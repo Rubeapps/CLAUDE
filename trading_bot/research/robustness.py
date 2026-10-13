@@ -46,7 +46,7 @@ def random_entry_pvalue(df, symbol, strat, params, n_sims=200, seed=0, cost=None
     o, h, l, c = (df[k].to_numpy(np.float64) for k in ("open", "high", "low", "close"))
     args = (p["atr"], p["exit_long"], p["exit_short"], p["flat"], p["entry_ok"], p["trail_mult"],
             p["trail_start_r"], p["be_r"], p["be_lock_r"], p["max_bars"],
-            cost.get("slip_pips", 0.1) * spec.pip, spec.comm_frac)
+            cost.get("slip_pips", 0.1) * spec.pip, spec.comm_frac, p["trail2_mult"], p["trail2_start_r"])
     real = engine.run(o, h, l, c, sp, p["sig"], p["sl_dist"], p["tp_dist"], *args)[5].sum()
     nz = np.flatnonzero(p["sig"] != 0)
     valid = np.flatnonzero(p["entry_ok"] & (p["sl_dist"] > 0))

@@ -24,7 +24,8 @@ EXIT_NAMES = ["SL", "TP", "TRAIL", "TIME", "SIGNAL", "FLAT", "END"]
 @njit(cache=True)
 def run(o, h, l, c, spread, sig, sl_dist, tp_dist, atr,
         exit_long, exit_short, flat, entry_ok,
-        trail_mult, trail_start_r, be_r, be_lock_r, max_bars, slip, comm_frac):
+        trail_mult, trail_start_r, be_r, be_lock_r, max_bars, slip, comm_frac,
+        trail2_mult=0.0, trail2_start_r=0.0):
     """
     sig[i]      : +1 compra / -1 venda / 0 nada (decidido no fecho de i, executa em i+1)
     sl_dist[i]  : distância do stop em preço
@@ -185,13 +186,16 @@ def run(o, h, l, c, spread, sig, sl_dist, tp_dist, atr,
                     if ns < stop:
                         stop = ns
             # trailing chandelier
-            if trail_mult > 0 and mfe >= trail_start_r:
+            tm = trail_mult
+            if trail2_mult > 0 and mfe >= trail2_start_r:
+                tm = trail2_mult          # trailing mais apertado depois de um lucro grande
+            if tm > 0 and mfe >= trail_start_r:
                 if pos == 1:
-                    ns = best - trail_mult * atr[i]
+                    ns = best - tm * atr[i]
                     if ns > stop:
                         stop = ns
                 else:
-                    ns = best + trail_mult * atr[i]
+                    ns = best + tm * atr[i]
                     if ns < stop:
                         stop = ns
 
