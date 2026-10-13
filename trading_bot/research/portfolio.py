@@ -76,6 +76,8 @@ class PropRules:
     max_loss: float = 10.0      # % do saldo inicial (estático)
     max_days: int = 0           # 0 = sem limite (FTMO atual); 30 = regra antiga
     min_days: int = 4
+    daily_base: str = "max"     # "balance" = saldo fechado no início do dia (FTMO);
+                                # "max" = máx(saldo, equity) (mais exigente: FundedNext, 5ers...)
 
 
 def simulate_challenges(daily: pd.DataFrame, risk_pct: float, rules: PropRules,
@@ -84,7 +86,8 @@ def simulate_challenges(daily: pd.DataFrame, risk_pct: float, rules: PropRules,
     falhar. Usa a sequência REAL de dias (mantém correlações e clusters de perdas)."""
     eqc = daily["eq_close"].to_numpy() * risk_pct
     eqm = np.minimum(daily["eq_min"].to_numpy(), daily["eq_close"].to_numpy()) * risk_pct
-    base = daily["day_base"].to_numpy() * risk_pct
+    col = "day_base" if rules.daily_base == "max" else "start_bal"
+    base = daily[col].to_numpy() * risk_pct
     n = len(eqc)
     rows = []
     for s in range(1, n - 1, start_step):
@@ -110,7 +113,7 @@ def funded_stats(daily: pd.DataFrame, risk_pct: float, rules: PropRules, horizon
                  start_step=5) -> dict:
     """Conta financiada: probabilidade de violar a regra em `horizon_days` e lucro médio."""
     r = PropRules(target=1e9, daily_loss=rules.daily_loss, max_loss=rules.max_loss,
-                  max_days=horizon_days, min_days=0)
+                  max_days=horizon_days, min_days=0, daily_base=rules.daily_base)
     sim = simulate_challenges(daily, risk_pct, r, start_step)
     sim = sim[sim.start <= daily.index[-1] - pd.Timedelta(days=int(horizon_days * 1.45))]
     breach = sim.result.str.startswith("fail").mean()

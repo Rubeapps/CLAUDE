@@ -49,7 +49,7 @@ def _pack(sig, sl, tp, atr, exl, exs, flat, ok, trail=0.0, trail_start=0.0,
 def trend_breakout(df, symbol, n_break=55, ema_len=200, atr_len=20, sl_atr=2.0,
                    trail_atr=3.0, tp_r=0.0, n_exit=0, max_bars=0, friday_flat=False,
                    h_from=0, h_to=24, be_r=0.0, trail_start=0.0, side=0, adx_min=0.0,
-                   trail2_atr=0.0, trail2_start=0.0):
+                   trail2_atr=0.0, trail2_start=0.0, friday_hour=22):
     """side: 0 = compra e venda, 1 = só compra, -1 = só venda.
     h_from/h_to: horas (servidor) em que um sinal pode ser aceite."""
     o, h, l, c, n, hour, dow = _base(df)
@@ -73,7 +73,9 @@ def trend_breakout(df, symbol, n_break=55, ema_len=200, atr_len=20, sl_atr=2.0,
         xs = c > ind.highest(h, n_exit)
     else:
         xl = np.zeros(n, np.bool_); xs = np.zeros(n, np.bool_)
-    flat = _friday_flat(df) if friday_flat else np.zeros(n, np.bool_)
+    flat = _friday_flat(df, friday_hour) if friday_flat else np.zeros(n, np.bool_)
+    if friday_flat:   # sem novas entradas na sexta a partir da barra anterior ao fecho
+        sig[(dow == 4) & (hour >= friday_hour - 1)] = 0
     ok = ~np.isnan(a) & ~np.isnan(hh)
     if ema_len > 0:
         ok &= ~np.isnan(e)
