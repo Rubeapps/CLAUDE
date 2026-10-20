@@ -5,16 +5,21 @@
 --   produto principal = 4,45 € por unidade, em todos os países
 --   meias             = 0,74 $ por unidade, em todos os países
 -- Países Baixos: sem envio disponível (fica de fora).
+-- Portugal: ainda sem tarifa (encomendas PT aparecem como "sem tarifa").
+-- Regime: isento ao abrigo do art. 53.º do CIVA (volume anual < 15 000 €).
 -- =============================================================================
 with me as (
   select id from auth.users order by created_at limit 1
 ),
 products as (
-  insert into public.cost_products (user_id, key, name, currency)
-  select me.id, v.key, v.name, v.currency
-  from me, (values ('principal', 'Produto principal', 'EUR'),
-                   ('meias',     'Meias',             'USD')) as v(key, name, currency)
-  on conflict (user_id, key) do update set name = excluded.name
+  insert into public.cost_products (user_id, key, name, currency, shopify_product_ids)
+  select me.id, v.key, v.name, v.currency, v.ids
+  from me, (values
+    ('principal', 'Zaynara Fleece-Lined Tights', 'EUR', array['gid://shopify/Product/15802837664084']),
+    ('meias',     'Womens Thick Thermal Knit Socks', 'USD', array['gid://shopify/Product/15850723410260'])
+  ) as v(key, name, currency, ids)
+  on conflict (user_id, key) do update
+    set name = excluded.name, shopify_product_ids = excluded.shopify_product_ids
   returning id, key, user_id
 ),
 -- país, qtd, preço total (produto+envio), envio
@@ -50,3 +55,8 @@ on conflict (product_id, country_code, quantity, valid_from) do update
   set supplier = excluded.supplier,
       product_cost = excluded.product_cost,
       shipping_cost = excluded.shipping_cost;
+
+-- Definições do negócio
+insert into public.business_settings (user_id, vat_mode, vat_rate, default_shipping_mode, primary_product_key)
+select id, 'exempt', 23, 'together', 'principal' from auth.users order by created_at limit 1
+on conflict (user_id) do update set vat_mode = excluded.vat_mode;

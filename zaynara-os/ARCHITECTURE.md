@@ -1,4 +1,4 @@
-# Zaynara OS — Arquitetura (Fase 1)
+# Zaynara OS — Arquitetura
 
 Hub operacional privado: Next.js (App Router) + Supabase + Vercel, 100 % free tier.
 
@@ -26,9 +26,10 @@ zaynara-os/
 │   │   ├── expenses/                 # Módulo 4
 │   │   │   ├── page.tsx
 │   │   │   └── actions.ts            # Server Actions (CRUD)
-│   │   └── operations/               # Módulo 5
-│   │       ├── page.tsx              # Kanban + SOPs (tabs)
-│   │       └── actions.ts
+│   │   ├── operations/               # Módulo 5
+│   │   │   ├── page.tsx              # Kanban + SOPs (tabs)
+│   │   │   └── actions.ts
+│   │   └── settings/                 # regime de IVA, modo de envio, produtos ↔ tabela de custos
 │   └── api/
 │       ├── chat/route.ts             # streaming RAG → fallback Tavily
 │       ├── documents/ingest/route.ts # PDF → chunks → embeddings → pgvector
@@ -59,19 +60,23 @@ zaynara-os/
 │   │   ├── pdf.ts                    # extração de texto + nº de página
 │   │   └── splitter.ts               # RecursiveCharacterTextSplitter afinado p/ artigos
 │   ├── integrations/
-│   │   ├── shopify.ts                # GraphQL Admin: orders, unitCost, inventory, payouts
-│   │   └── meta-ads.ts               # Insights API: spend diário
+│   │   ├── shopify.ts                # GraphQL Admin: encomendas, taxas Shopify Payments, stock
+│   │   ├── meta-ads.ts               # Insights API: gasto diário
+│   │   └── fx.ts                     # câmbio USD→EUR (BCE via Frankfurter)
+│   ├── dashboard/load.ts             # junta Supabase + Shopify + Meta + câmbio → métricas
 │   ├── finance/
-│   │   ├── metrics.ts                # funções PURAS: lucro líquido, ROAS, séries diárias
-│   │   └── metrics.test.ts           # testes (lógica determinística = testável)
+│   │   ├── landed-cost.ts            # custo do fornecedor por encomenda (país × qtd, junto/separado)
+│   │   ├── metrics.ts                # funções PURAS: lucro líquido, ROAS, break-even, séries diárias
+│   │   └── *.test.ts                 # testes (lógica determinística = testável)
 │   └── email/
 │       ├── resend.ts
 │       └── templates/expense-alert.tsx
 ├── types/
 │   └── database.types.ts             # `supabase gen types typescript`
 ├── supabase/
-│   └── migrations/0001_init.sql      # Passo 1
-├── proxy.ts                          # (Next 16; "middleware.ts" no Next 15) → redirect /login sem sessão
+│   ├── migrations/                   # 0001 esquema base · 0002 custos fornecedor · 0003 definições
+│   └── seed/supplier_rates.sql       # tabela do fornecedor + produtos + regime de IVA
+├── proxy.ts                          # Next 16 (antigo middleware.ts) → redirect /login sem sessão
 ├── vercel.json                       # cron: /api/cron/expenses diário
 ├── components.json                   # config shadcn
 └── .env.example
@@ -91,6 +96,11 @@ zaynara-os/
 - **`effective_date` nas fontes:** a resposta fiscal indica de quando é a lei citada.
 - **Finanças sem IA:** `lib/finance/metrics.ts` recebe dados normalizados e devolve números.
   Funções puras com testes.
+- **COGS pela tabela do fornecedor, não pela Shopify:** o custo varia com o país e a quantidade,
+  e as tarifas têm data de início (as encomendas antigas usam o preço da altura).
+- **Sem `cacheComponents`:** todas as páginas dependem da sessão e de dados em tempo real.
+- **Componentes UI:** escritos ao estilo shadcn/ui (`components.json` incluído); novos
+  componentes podem ser adicionados com `npx shadcn add`.
 
 ## Restrições do free tier a ter em conta
 

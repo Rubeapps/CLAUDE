@@ -11,6 +11,20 @@ export interface SupplierRate {
   productCost: number;
   shippingCost: number;
   currency: string;
+  /** "YYYY-MM-DD"; sem valor = sempre em vigor. */
+  validFrom?: string;
+}
+
+/** Tarifas em vigor numa data: a mais recente com validFrom <= data. */
+export function ratesAt(rates: SupplierRate[], date: string): SupplierRate[] {
+  const latest = new Map<string, SupplierRate>();
+  for (const rate of rates) {
+    if (rate.validFrom && rate.validFrom > date) continue;
+    const key = `${rate.productKey}|${rate.country}|${rate.quantity}`;
+    const current = latest.get(key);
+    if (!current || (rate.validFrom ?? "") > (current.validFrom ?? "")) latest.set(key, rate);
+  }
+  return [...latest.values()];
 }
 
 export interface CostProduct {
