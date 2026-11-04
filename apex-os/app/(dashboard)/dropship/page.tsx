@@ -1,0 +1,172 @@
+import { Inbox } from "lucide-react";
+import type { Metadata } from "next";
+import { AdSpendManager } from "@/components/dropship/AdSpendManager";
+import { MetricsCards } from "@/components/dropship/MetricsCards";
+import { ProductsManager } from "@/components/dropship/ProductsManager";
+import { ProfitChart } from "@/components/dropship/ProfitChart";
+import { StoreConnect } from "@/components/dropship/StoreConnect";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { RangeTabs } from "@/components/layout/RangeTabs";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { NON_REVENUE_FINANCIAL_STATUSES } from "@/lib/calculations/unit-economics";
+import { getDropshipData, parseRange, RANGE_OPTIONS } from "@/lib/data/dropship";
+import { formatCurrency, formatDateTime, formatPercent, formatRatio, formatShortDate } from "@/lib/format";
+import { getSiteUrl } from "@/lib/site-url";
+import { requireUser } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
+
+export const metadata: Metadata = { title: "Dropshipping P&L" };
+
+export default async function DropshipPage({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
+  const { range } = await searchParams;
+  const rangeDays = parseRange(range);
+  const { supabase, user } = await requireUser();
+  const [data, siteUrl] = await Promise.all([getDropshipData(supabase, user.id, rangeDays), getSiteUrl()]);
+  const { currency } = data;
+  const dailyDesc = [...data.daily].reverse();
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Dropshipping P&L"
+        description={`Unit economics e lucro líquido de ${data.from} a ${data.to}.`}
+        actions={<RangeTabs basePath="/dropship" current={rangeDays} options={RANGE_OPTIONS} />}
+      />
+
+      <MetricsCards summary={data.summary} today={data.today} currency={currency} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Faturação, ad spend e lucro líquido diário</CardTitle>
+          <CardDescription>Net_Profit_Dia = Σ Lucro das encomendas − Ad spend do dia.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ProfitChart daily={data.daily} currency={currency} />
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>P&L diário</CardTitle>
+            <CardDescription>BE ROAS = Faturação / (Faturação − custos sem ads). ROAS acima do BE ⇒ lucro.</CardDescription>
+          </CardHeader>
+          <CardContent className="max-h-[420px] overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Dia</TableHead>
+                  <TableHead className="text-right">Enc.</TableHead>
+                  <TableHead className="text-right">Faturação</TableHead>
+                  <TableHead className="text-right">Lucro enc.</TableHead>
+                  <TableHead className="text-right">Ads</TableHead>
+                  <TableHead className="text-right">Líquido</TableHead>
+                  <TableHead className="text-right">ROAS</TableHead>
+                  <TableHead className="text-right">BE ROAS</TableHead>
+                  <TableHead className="text-right">Margem</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dailyDesc.map((d) => (
+                  <TableRow key={d.date}>
+                    <TableCell>{formatShortDate(d.date)}</TableCell>
+                    <TableCell className="text-right">{d.orders}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(d.revenue, currency)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(d.orderProfit, currency)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(d.adSpend, currency)}</TableCell>
+                    <TableCell className={cn("text-right font-medium", d.netProfit > 0 && "text-success", d.netProfit < 0 && "text-destructive")}>{formatCurrency(d.netProfit, currency)}</TableCell>
+                    <TableCell className="text-right">{formatRatio(d.roas)}</TableCell>
+                    <TableCell className="text-right">{formatRatio(d.breakEvenRoas)}</TableCell>
+                    <TableCell className="text-right">{formatPercent(d.netMarginPct)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Ad spend</CardTitle>
+            <CardDescription>Um registo por dia e plataforma (guardar de novo substitui o valor).</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AdSpendManager entries={data.adSpend} today={data.to} currency={currency} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Encomendas recentes</CardTitle>
+          <CardDescription>Recebidas pelo webhook Shopify. Lucro = Preço − (COGS + Portes + Taxa gateway).</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {data.recentOrders.length === 0 ? (
+            <EmptyState icon={Inbox} title="Sem encomendas no período" description="Liga a tua loja Shopify abaixo e configura o webhook para começares a receber encomendas." />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Encomenda</TableHead>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Gateway</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">COGS</TableHead>
+                  <TableHead className="text-right">Portes</TableHead>
+                  <TableHead className="text-right">Taxa</TableHead>
+                  <TableHead className="text-right">Lucro</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.recentOrders.map((o) => {
+                  const excluded = NON_REVENUE_FINANCIAL_STATUSES.has(o.status_financial);
+                  return (
+                    <TableRow key={o.id} className={cn(excluded && "opacity-50")}>
+                      <TableCell className="font-mono text-xs">{o.order_number}</TableCell>
+                      <TableCell>{formatDateTime(o.created_at)}</TableCell>
+                      <TableCell className="text-xs">{o.gateway}</TableCell>
+                      <TableCell>
+                        <Badge variant={o.status_financial === "paid" ? "success" : excluded ? "destructive" : "secondary"}>{o.status_financial}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">{formatCurrency(o.total_price, o.currency)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(o.total_cogs, o.currency)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(o.total_shipping, o.currency)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(o.gateway_fee, o.currency)}</TableCell>
+                      <TableCell className={cn("text-right font-medium", o.net_profit > 0 ? "text-success" : "text-destructive")}>{formatCurrency(o.net_profit, o.currency)}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Custos por SKU</CardTitle>
+            <CardDescription>O webhook cruza o SKU de cada linha com esta tabela para calcular COGS e portes.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ProductsManager products={data.products} currency={currency} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Ligação Shopify</CardTitle>
+            <CardDescription>Webhook assinado com HMAC-SHA256.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <StoreConnect stores={data.stores} webhookUrl={`${siteUrl}/api/webhooks/shopify`} />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
