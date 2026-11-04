@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { computeOrderEconomics, type ProductCost } from "@/lib/calculations/unit-economics";
+import { calculateUnitEconomics } from "@/lib/calculations/engine";
+import { computeOrderEconomics, resolveGatewayFeeRule, type ProductCost } from "@/lib/calculations/unit-economics";
 import { requireServerEnv } from "@/lib/env";
 import { errorMessage, jsonError } from "@/lib/http";
 import { normalizeShopDomain, resolveOrderGateway, shopifyOrderWebhookSchema, SUPPORTED_ORDER_TOPICS, verifyShopifyHmac } from "@/lib/shopify";
 import { createServiceClient } from "@/lib/supabase/server";
+import { isTelegramConfigured, sendTelegramAlert } from "@/lib/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +15,9 @@ interface WebhookSuccessBody {
   topic: string;
   order_id: string;
   net_profit: number;
+  margin_pct: number | null;
   unmatched_skus: string[];
+  alerted: boolean;
 }
 
 /**
@@ -97,6 +101,17 @@ export async function POST(request: NextRequest) {
       costsBySku,
     });
 
+    const rule = resolveGatewayFeeRule(gateway);
+    const unit = calculateUnitEconomics(order.total_price, economics.totalCogs, economics.totalShipping, rule.fixed, rule.percent);
+
+    const { data: existing, error: existingError } = await supabase
+      .from("dropship_orders")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("shopify_order_id", order.id)
+      .maybeSingle();
+    if (existingError) return jsonError(500, "database_error", existingError.message);
+
     const { error: upsertError } = await supabase.from("dropship_orders").upsert(
       {
         user_id: userId,
@@ -116,12 +131,29 @@ export async function POST(request: NextRequest) {
     );
     if (upsertError) return jsonError(500, "database_error", upsertError.message);
 
+    // Alerta [DROPSHIP] só na primeira receção da encomenda (o Shopify repete webhooks).
+    let alerted = false;
+    if (topic === "orders/create" && !existing && isTelegramConfigured()) {
+      const currency = order.currency.toUpperCase();
+      const lines = [
+        `Nova encomenda ${order.name ?? `#${order.order_number}`} · ${shopDomain}`,
+        `Total: ${order.total_price.toFixed(2)} ${currency} · ${gateway}`,
+        `COGS ${economics.totalCogs.toFixed(2)} · Portes ${economics.totalShipping.toFixed(2)} · Taxa ${economics.gatewayFee.toFixed(2)}`,
+        `Lucro: ${economics.netProfit.toFixed(2)} ${currency} (${unit.marginPct === null ? "—" : `${unit.marginPct.toFixed(1)}%`})`,
+      ];
+      if (economics.netProfit <= 0) lines.push("⚠️ Encomenda sem margem positiva.");
+      if (economics.unmatchedSkus.length > 0) lines.push(`⚠️ SKUs sem custo registado: ${economics.unmatchedSkus.join(", ")}`);
+      alerted = await sendTelegramAlert(lines.join("\n"), "DROPSHIP");
+    }
+
     const body: WebhookSuccessBody = {
       ok: true,
       topic,
       order_id: order.id,
       net_profit: economics.netProfit,
+      margin_pct: unit.marginPct,
       unmatched_skus: economics.unmatchedSkus,
+      alerted,
     };
     return NextResponse.json(body, { status: 200 });
   } catch (error) {

@@ -83,6 +83,39 @@ export async function sendTelegramMessage(markdownV2Text: string, chatId?: strin
   return { ok: false, error: "Telegram: tentativas esgotadas." };
 }
 
+export type AlertSeverity = "INFO" | "DROPSHIP" | "SPY" | "CIRCUIT BREAKER";
+
+const SEVERITY_ICON: Record<AlertSeverity, string> = {
+  INFO: "ℹ️",
+  DROPSHIP: "🛒",
+  SPY: "🕵️",
+  "CIRCUIT BREAKER": "🚨",
+};
+
+/** Cabeçalho MarkdownV2 com a tag de severidade, ex.: "🕵️ *\\[SPY\\]*". */
+export function severityTag(severity: AlertSeverity): string {
+  return `${SEVERITY_ICON[severity]} *${escapeMarkdownV2(`[${severity}]`)}*`;
+}
+
+export interface TelegramAlertOptions {
+  /** true se `message` já vem formatada em MarkdownV2 (com escapes); por omissão é texto simples e é escapada. */
+  markdown?: boolean;
+  /** Chat de destino; por omissão TELEGRAM_CHAT_ID. */
+  chatId?: string;
+}
+
+/**
+ * Envia um alerta para https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage
+ * prefixado com a tag de severidade ([INFO], [DROPSHIP], [SPY], [CIRCUIT BREAKER]).
+ * Devolve true se o Telegram aceitou a mensagem; nunca lança.
+ */
+export async function sendTelegramAlert(message: string, severity: AlertSeverity = "INFO", options: TelegramAlertOptions = {}): Promise<boolean> {
+  const body = options.markdown ? message : escapeMarkdownV2(message);
+  const result = await sendTelegramMessage(`${severityTag(severity)}\n${body}`, options.chatId);
+  if (!result.ok) console.error(`[telegram] ${severity}: ${result.error}`);
+  return result.ok;
+}
+
 function formatMoney(value: number): string {
   return value.toFixed(2);
 }

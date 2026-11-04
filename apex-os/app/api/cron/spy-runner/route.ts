@@ -5,7 +5,7 @@ import { requireServerEnv } from "@/lib/env";
 import { errorMessage, jsonError } from "@/lib/http";
 import { scanTargets, type TargetScanResult } from "@/lib/spy-engine";
 import { createServiceClient } from "@/lib/supabase/server";
-import { formatRunSummary, isTelegramConfigured, sendTelegramMessage } from "@/lib/telegram";
+import { formatRunSummary, isTelegramConfigured, sendTelegramAlert } from "@/lib/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ interface CronResponseBody {
   started_at: string;
   finished_at: string;
   targets: number;
-  totals: { scanned: number; new_products: number; price_changes: number; stock_outs: number; errors: number };
+  totals: { scanned: number; new_products: number; price_changes: number; price_drops: number; stock_outs: number; scaling: number; errors: number };
   results: TargetScanResult[];
 }
 
@@ -69,15 +69,19 @@ async function run(request: NextRequest) {
         scanned: acc.scanned + r.scanned,
         new_products: acc.new_products + (r.baseline ? 0 : r.newProducts),
         price_changes: acc.price_changes + r.priceChanges,
+        price_drops: acc.price_drops + r.priceDrops,
         stock_outs: acc.stock_outs + r.stockOuts,
+        scaling: acc.scaling + r.scaling,
         errors: acc.errors + (r.ok ? 0 : 1),
       }),
-      { scanned: 0, new_products: 0, price_changes: 0, stock_outs: 0, errors: 0 },
+      { scanned: 0, new_products: 0, price_changes: 0, price_drops: 0, stock_outs: 0, scaling: 0, errors: 0 },
     );
 
     if (notify && query.data.summary === "true" && isTelegramConfigured()) {
-      await sendTelegramMessage(
+      await sendTelegramAlert(
         formatRunSummary({ targets: results.length, newProducts: totals.new_products, priceChanges: totals.price_changes, stockOuts: totals.stock_outs, errors: totals.errors }),
+        "INFO",
+        { markdown: true },
       );
     }
 

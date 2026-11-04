@@ -1,5 +1,6 @@
 import { Inbox } from "lucide-react";
 import type { Metadata } from "next";
+import { AdFatigueRadar } from "@/components/dropship/AdFatigueRadar";
 import { AdSpendManager } from "@/components/dropship/AdSpendManager";
 import { MetricsCards } from "@/components/dropship/MetricsCards";
 import { ProductsManager } from "@/components/dropship/ProductsManager";
@@ -12,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { NON_REVENUE_FINANCIAL_STATUSES } from "@/lib/calculations/unit-economics";
-import { getDropshipData, parseRange, RANGE_OPTIONS } from "@/lib/data/dropship";
+import { getDropshipData, getLatestAdCreatives, parseRange, RANGE_OPTIONS } from "@/lib/data/dropship";
 import { formatCurrency, formatDateTime, formatPercent, formatRatio, formatShortDate } from "@/lib/format";
 import { getSiteUrl } from "@/lib/site-url";
 import { requireUser } from "@/lib/supabase/server";
@@ -24,7 +25,7 @@ export default async function DropshipPage({ searchParams }: { searchParams: Pro
   const { range } = await searchParams;
   const rangeDays = parseRange(range);
   const { supabase, user } = await requireUser();
-  const [data, siteUrl] = await Promise.all([getDropshipData(supabase, user.id, rangeDays), getSiteUrl()]);
+  const [data, siteUrl, creatives] = await Promise.all([getDropshipData(supabase, user.id, rangeDays), getSiteUrl(), getLatestAdCreatives(supabase, user.id)]);
   const { currency } = data;
   const dailyDesc = [...data.daily].reverse();
 
@@ -98,6 +99,16 @@ export default async function DropshipPage({ searchParams }: { searchParams: Pro
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Ad Fatigue Radar</CardTitle>
+          <CardDescription>Hook rate = 3s plays / impressões · Hold rate = ThruPlays / 3s plays · Fadiga = frequência ≥ 2.2 ou (CPA &gt; break-even e CTR &lt; 1%).</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AdFatigueRadar defaultBreakEvenCpa={data.breakEvenCpa} currency={currency} today={data.to} saved={creatives} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

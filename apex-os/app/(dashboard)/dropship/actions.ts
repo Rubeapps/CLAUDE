@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { actionError, actionSuccess, formNumber, formToObject, zodMessage, type ActionState } from "@/lib/action-state";
+import { calculateAdFatigue } from "@/lib/calculations/engine";
+import type { DropshipAdCreativeInsert } from "@/lib/database.types";
 import { normalizeShopDomain } from "@/lib/shopify";
 import { requireUser } from "@/lib/supabase/server";
 
@@ -62,6 +64,72 @@ export async function deleteAdSpend(formData: FormData): Promise<void> {
   const { supabase, user } = await requireUser();
   await supabase.from("dropship_ad_spend").delete().eq("id", parsed.data.id).eq("user_id", user.id);
   revalidate();
+}
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "data inválida");
+
+const creativeRowSchema = z.object({
+  campaignName: z.string().trim().min(1).max(300),
+  adName: z.string().trim().min(1).max(300),
+  spend: z.number().min(0).max(99_999_999.99),
+  impressions: z.number().int().min(0).max(2_147_483_647),
+  videoPlays3s: z.number().int().min(0).max(2_147_483_647),
+  thruplays: z.number().int().min(0).max(2_147_483_647),
+  frequency: z.number().min(0).max(999.99),
+  ctr: z.number().min(0).max(999.99),
+  cpa: z.number().min(0).max(99_999_999.99),
+  date: isoDate.nullable(),
+});
+
+const creativesPayloadSchema = z.object({
+  breakEvenCpa: z.number().min(0).max(99_999_999),
+  fallbackDate: isoDate,
+  rows: z.array(creativeRowSchema).min(1, "o CSV não tem linhas válidas").max(2000, "máximo 2000 linhas por importação"),
+});
+
+/** Guarda uma importação CSV do Meta Ads. O is_fatigued é recalculado no servidor. */
+export async function saveAdCreatives(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const raw = formData.get("payload");
+  if (typeof raw !== "string") return actionError("Payload em falta.");
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return actionError("Payload inválido.");
+  }
+  const parsed = creativesPayloadSchema.safeParse(json);
+  if (!parsed.success) return actionError(zodMessage(parsed.error));
+
+  const { supabase, user } = await requireUser();
+  const { breakEvenCpa, fallbackDate } = parsed.data;
+
+  // Deduplica (data, campanha, anúncio): a última linha ganha, como no upsert.
+  const byKey = new Map<string, DropshipAdCreativeInsert>();
+  for (const r of parsed.data.rows) {
+    const date = r.date ?? fallbackDate;
+    const fatigue = calculateAdFatigue({ impressions: r.impressions, videoPlays3s: r.videoPlays3s, thruplays: r.thruplays, frequency: r.frequency, ctr: r.ctr, cpa: r.cpa, breakEvenCpa });
+    byKey.set(`${date}|${r.campaignName}|${r.adName}`, {
+      user_id: user.id,
+      campaign_name: r.campaignName,
+      ad_name: r.adName,
+      spend: r.spend,
+      impressions: r.impressions,
+      video_plays_3s: r.videoPlays3s,
+      thruplays: r.thruplays,
+      frequency: r.frequency,
+      ctr: r.ctr,
+      cpa: r.cpa,
+      date,
+      is_fatigued: fatigue.isFatigued,
+    });
+  }
+  const rows = [...byKey.values()];
+
+  const { error } = await supabase.from("dropship_ad_creatives").upsert(rows, { onConflict: "user_id,date,campaign_name,ad_name" });
+  if (error) return actionError(error.message);
+  revalidate();
+  const fatigued = rows.filter((r) => r.is_fatigued).length;
+  return actionSuccess(`${rows.length} criativos guardados · ${fatigued} em fadiga crítica.`);
 }
 
 export async function connectStore(_prev: ActionState, formData: FormData): Promise<ActionState> {

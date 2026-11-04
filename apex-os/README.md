@@ -12,7 +12,7 @@ Tudo corre em camadas gratuitas: Vercel/qualquer host Node, Supabase Free, GitHu
 
 ## Arranque
 
-1. **Supabase**: cria um projeto, abre *SQL Editor* e executa `supabase/schema.sql`.
+1. **Supabase**: cria um projeto, abre *SQL Editor* e executa `supabase/schema.sql` e depois `supabase/migrations/002_control_features.sql`.
    Em *Authentication → URL Configuration* adiciona `<SITE_URL>/auth/callback` aos redirect URLs.
 2. **Variáveis**: `cp .env.example .env.local` e preenche.
 3. **Correr**:
@@ -51,8 +51,21 @@ curl -X POST "$APEX_BASE_URL/api/cron/spy-runner?summary=true" -H "Authorization
 - Webhook e cron (sem sessão) usam a service role, sempre com filtro explícito por `user_id`/`target_id`.
 - HMAC e Bearer comparados em tempo constante (`timingSafeEqual`).
 
+## Funcionalidades de controlo (migração 002)
+
+| Funcionalidade | Onde | Regra |
+| --- | --- | --- |
+| **War Chest** | `/dashboard` | Lucro líquido dividido em reinvestir / reserva+impostos / injeção no trading (`calculateWarChestAllocation`, % somam 100). |
+| **Ad Fatigue Radar** | `/dropship` | CSV do Meta Ads lido no browser. Hook rate = 3s plays / impressões; Hold rate = ThruPlays / 3s plays; fadiga = frequência ≥ 2.2 ou (CPA > break-even CPA e CTR < 1%). Guardado em `dropship_ad_creatives`. |
+| **Meta Ad Library** | `/spy` | `meta_page_id` por loja → link direto para os anúncios ativos da página. |
+| **Sinal de escala** | cron Spy | `is_scaling` = tag best-seller OU mudança de stock (variantes disponíveis) nas últimas 72h. Alerta `[SPY]`. |
+| **Anti-FOMO + Circuit Breaker** | `/trading` | 4 confirmações + estado mental antes de executar; cooldown de 30 min após perda; bloqueio total quando a perda da sessão (00:00 UTC) ≥ `max_daily_loss_percent`, com contagem decrescente. Tudo revalidado no servidor em `logTrade`. Alerta `[CIRCUIT BREAKER]` ao disparar. |
+
+Fórmulas puras em `lib/calculations/engine.ts`. Alertas via `sendTelegramAlert(mensagem, "INFO" | "DROPSHIP" | "SPY" | "CIRCUIT BREAKER")`.
+
 ## Notas de implementação
 
 - `crypto` vem do módulo nativo `node:crypto`; o pacote npm `crypto` é um stub obsoleto e não é instalado.
 - `app/page.tsx` e `app/(dashboard)/page.tsx` resolveriam ambos para `/` (erro no Next.js), por isso o dashboard unificado vive em `app/(dashboard)/dashboard/page.tsx` (`/dashboard`) e `/` é a landing.
+- A migração 002 acrescenta `available_variants` e `scaling_detected_at` a `spy_tracked_products` (necessários para detetar movimento de stock e manter o sinal de escala 72h), `WITH CHECK` nas políticas novas e um índice único em `dropship_ad_creatives` para reimportar CSVs sem duplicar.
 - Tabela extra `dropship_stores` liga o domínio myshopify ao utilizador, para o webhook saber a que conta pertence cada encomenda.

@@ -73,6 +73,14 @@ export const shopifyStorefrontProductSchema = z.object({
   title: z.string(),
   handle: z.string(),
   published_at: z.string().nullish(),
+  tags: z
+    .union([z.array(z.string()), z.string(), z.null()])
+    .optional()
+    .transform((value) => {
+      if (Array.isArray(value)) return value.map((t) => t.trim()).filter(Boolean);
+      if (typeof value === "string") return value.split(",").map((t) => t.trim()).filter(Boolean);
+      return [];
+    }),
   images: z.array(z.object({ src: z.string().url() })).default([]),
   variants: z
     .array(
@@ -101,6 +109,17 @@ export interface ProductSnapshot {
   isAvailable: boolean;
   imageUrl: string | null;
   publishedAt: string | null;
+  tags: string[];
+  /** Nº de variantes com available: true (mudança entre scans = movimento de stock). */
+  availableVariants: number;
+  totalVariants: number;
+}
+
+/** Tags que as lojas usam para destacar produtos a vender bem. */
+const SCALING_TAG_PATTERN = /best[\s_-]?sell|top[\s_-]?sell|trending|hot[\s_-]?(item|product|seller)|most[\s_-]?popular|viral/i;
+
+export function hasScalingTag(tags: readonly string[]): boolean {
+  return tags.some((tag) => SCALING_TAG_PATTERN.test(tag));
 }
 
 /**
@@ -120,6 +139,9 @@ export function toProductSnapshot(product: ShopifyStorefrontProduct): ProductSna
     isAvailable: product.variants.length > 0 && product.variants.some((v) => v.available),
     imageUrl: product.images[0]?.src ?? null,
     publishedAt: product.published_at ?? null,
+    tags: product.tags,
+    availableVariants: product.variants.filter((v) => v.available).length,
+    totalVariants: product.variants.length,
   };
 }
 

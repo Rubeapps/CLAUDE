@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 
 function AccountFields({ account }: { account?: TradingAccountRow }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-5">
       <div className="space-y-1">
         <Label>Nome</Label>
         <Input name="name" defaultValue={account?.name} placeholder="Prop firm 100k" required />
@@ -31,6 +31,10 @@ function AccountFields({ account }: { account?: TradingAccountRow }) {
       <div className="space-y-1">
         <Label>Risco máx. %</Label>
         <Input name="max_risk_percent" inputMode="decimal" defaultValue={account?.max_risk_percent ?? 1} required />
+      </div>
+      <div className="space-y-1">
+        <Label>Perda diária máx. %</Label>
+        <Input name="max_daily_loss_percent" inputMode="decimal" defaultValue={account?.max_daily_loss_percent ?? 3} required />
       </div>
     </div>
   );

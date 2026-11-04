@@ -51,6 +51,7 @@ export function JournalTable({ trades }: { trades: TradingJournalRow[] }) {
           <TableHead className="text-right">P&L</TableHead>
           <TableHead className="text-right">R</TableHead>
           <TableHead>Estado</TableHead>
+          <TableHead>Mente</TableHead>
           <TableHead />
         </TableRow>
       </TableHeader>
@@ -76,6 +77,10 @@ export function JournalTable({ trades }: { trades: TradingJournalRow[] }) {
             <TableCell className="text-right">{t.r_multiple === null ? "—" : `${t.r_multiple.toFixed(2)}R`}</TableCell>
             <TableCell>
               <Badge variant={t.status === "OPEN" ? "default" : "secondary"}>{t.status}</Badge>
+            </TableCell>
+            <TableCell className="text-xs" title={t.fomo_check_passed ? "Checklist anti-FOMO cumprido" : "Sem checklist (registo antigo)"}>
+              {t.fomo_check_passed ? "✓ " : ""}
+              {t.mental_state ?? "—"}
             </TableCell>
             <TableCell>
               {t.status === "OPEN" ? (

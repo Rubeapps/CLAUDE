@@ -4,7 +4,14 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { actionError, actionSuccess, formNumber, formToObject, zodMessage, type ActionState } from "@/lib/action-state";
 import { calculateRMultiple, calculateStopDistance, calculateTradePnl } from "@/lib/calculations/risk";
+import { getCircuitState, normalizeAccount } from "@/lib/data/trading";
+import { formatDateTime } from "@/lib/format";
 import { requireUser } from "@/lib/supabase/server";
+import { isTelegramConfigured, sendTelegramAlert } from "@/lib/telegram";
+
+/** Estados mentais que bloqueiam a execução (decisão emocional). */
+export type BlockedMentalState = "REVENGE" | "EUPHORIC";
+const BLOCKED_MENTAL_STATES: ReadonlySet<string> = new Set<BlockedMentalState>(["REVENGE", "EUPHORIC"]);
 
 const positive = formNumber.pipe(z.number().positive("tem de ser > 0"));
 
@@ -13,6 +20,7 @@ const accountSchema = z.object({
   balance: formNumber.pipe(z.number().min(0, "não pode ser negativo").max(9_999_999_999)),
   currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3,5}$/, "moeda inválida (ex.: USD, EUR, USDT)"),
   max_risk_percent: formNumber.pipe(z.number().gt(0, "tem de ser > 0").max(99.99, "máximo 99.99")),
+  max_daily_loss_percent: formNumber.pipe(z.number().gt(0, "tem de ser > 0").max(99.99, "máximo 99.99")),
 });
 
 const updateAccountSchema = accountSchema.extend({ id: z.string().uuid() });
@@ -26,6 +34,8 @@ const tradeSchema = z.object({
   take_profit: positive,
   position_size: positive,
   notes: z.string().trim().max(2000).optional(),
+  fomo_check_passed: z.literal("true", { message: "Completa o checklist anti-FOMO antes de executar." }),
+  mental_state: z.enum(["CALM", "FOCUSED", "TIRED", "ANXIOUS", "EUPHORIC", "REVENGE"], { message: "Indica o teu estado mental." }),
 });
 
 const closeSchema = z.object({ id: z.string().uuid(), exit_price: positive });
@@ -76,10 +86,27 @@ export async function logTrade(_prev: ActionState, formData: FormData): Promise<
   const rewardOk = t.direction === "LONG" ? t.take_profit > t.entry_price : t.take_profit < t.entry_price;
   if (!rewardOk) return actionError("O Take Profit está do lado errado da entrada.");
 
+  if (BLOCKED_MENTAL_STATES.has(t.mental_state)) {
+    return actionError("Estado mental de risco (revenge/euforia): execução bloqueada. Afasta-te do ecrã.");
+  }
+
   const { supabase, user } = await requireUser();
-  const { data: account, error: accountError } = await supabase.from("trading_accounts").select("id").eq("id", t.account_id).eq("user_id", user.id).maybeSingle();
+  const { data: accountRow, error: accountError } = await supabase.from("trading_accounts").select("*").eq("id", t.account_id).eq("user_id", user.id).maybeSingle();
   if (accountError) return actionError(accountError.message);
-  if (!account) return actionError("Conta não encontrada.");
+  if (!accountRow) return actionError("Conta não encontrada.");
+
+  // Revalidação no servidor: o gatekeeper do cliente não é uma barreira de segurança.
+  const circuit = await getCircuitState(supabase, user.id, normalizeAccount(accountRow));
+  if (circuit.breaker.isLocked) {
+    return actionError(`Circuit breaker ativo: perda diária ${circuit.breaker.dailyLoss.toFixed(2)} ≥ limite ${circuit.breaker.maxDailyLoss.toFixed(2)}. Desbloqueia ${formatDateTime(circuit.breaker.unlocksAt)}.`);
+  }
+  if (circuit.cooldownUntil) {
+    return actionError(`Cooldown pós-perda ativo até ${formatDateTime(circuit.cooldownUntil)}.`);
+  }
+  const tradeRisk = Math.abs(t.entry_price - t.stop_loss) * t.position_size;
+  if (tradeRisk > circuit.breaker.remainingLoss + 0.01) {
+    return actionError(`O risco deste trade (${tradeRisk.toFixed(2)}) excede o que resta do limite diário (${circuit.breaker.remainingLoss.toFixed(2)}).`);
+  }
 
   const { error } = await supabase.from("trading_journal").insert({
     user_id: user.id,
@@ -92,6 +119,8 @@ export async function logTrade(_prev: ActionState, formData: FormData): Promise<
     position_size: t.position_size,
     notes: t.notes && t.notes.length > 0 ? t.notes : null,
     status: "OPEN",
+    fomo_check_passed: true,
+    mental_state: t.mental_state,
   });
   if (error) return actionError(error.message);
   revalidate();
@@ -125,12 +154,29 @@ export async function closeTrade(_prev: ActionState, formData: FormData): Promis
   if (updateError) return actionError(updateError.message);
   if (updated.length === 0) return actionError("Este trade já foi fechado noutro separador.");
 
-  const { data: account, error: accountError } = await supabase.from("trading_accounts").select("balance").eq("id", trade.account_id).eq("user_id", user.id).maybeSingle();
+  const { data: account, error: accountError } = await supabase.from("trading_accounts").select("*").eq("id", trade.account_id).eq("user_id", user.id).maybeSingle();
   if (accountError) return actionError(accountError.message);
   if (account) {
-    const newBalance = Math.round((Number(account.balance) + netPnl) * 100) / 100;
-    const { error: balanceError } = await supabase.from("trading_accounts").update({ balance: Math.max(0, newBalance) }).eq("id", trade.account_id).eq("user_id", user.id);
+    const newBalance = Math.max(0, Math.round((Number(account.balance) + netPnl) * 100) / 100);
+    const { error: balanceError } = await supabase.from("trading_accounts").update({ balance: newBalance }).eq("id", trade.account_id).eq("user_id", user.id);
     if (balanceError) return actionError(balanceError.message);
+
+    // Se este fecho fez disparar o circuit breaker, avisa no Telegram.
+    if (netPnl < 0 && isTelegramConfigured()) {
+      const after = await getCircuitState(supabase, user.id, normalizeAccount({ ...account, balance: newBalance }));
+      const lossBefore = after.breaker.dailyLoss + netPnl;
+      if (after.breaker.isLocked && lossBefore < after.breaker.maxDailyLoss) {
+        await sendTelegramAlert(
+          [
+            `Conta ${account.name}: limite de perda diária atingido.`,
+            `Perda da sessão: ${after.breaker.dailyLoss.toFixed(2)} ${account.currency} (limite ${after.breaker.maxDailyLoss.toFixed(2)}, ${after.maxDailyLossPercent}%).`,
+            `Último trade: ${trade.direction} ${trade.symbol} ${netPnl.toFixed(2)}.`,
+            `Terminal bloqueado até ${formatDateTime(after.breaker.unlocksAt)}.`,
+          ].join("\n"),
+          "CIRCUIT BREAKER",
+        );
+      }
+    }
   }
 
   revalidate();

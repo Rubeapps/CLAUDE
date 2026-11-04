@@ -4,11 +4,12 @@ import { useCallback, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { DEFAULT_SYMBOLS, isValidSymbol } from "@/lib/binance";
+import type { CircuitState } from "@/lib/data/trading";
 import type { TradingAccountRow, TradingJournalRow } from "@/lib/database.types";
 import { RiskCalculator } from "./RiskCalculator";
 import { TradingChart, type ChartPriceLine } from "./TradingChart";
 
-export function TradingTerminal({ account, openTrades }: { account: TradingAccountRow | null; openTrades: TradingJournalRow[] }) {
+export function TradingTerminal({ account, circuit, openTrades }: { account: TradingAccountRow | null; circuit: CircuitState | null; openTrades: TradingJournalRow[] }) {
   const [symbol, setSymbol] = useState<string>(DEFAULT_SYMBOLS[0]);
   const [custom, setCustom] = useState("");
   const [livePrice, setLivePrice] = useState<number | null>(null);
@@ -73,7 +74,7 @@ export function TradingTerminal({ account, openTrades }: { account: TradingAccou
           <CardDescription>Posição = (Saldo × Risco%) / Distância do SL</CardDescription>
         </CardHeader>
         <CardContent>
-          <RiskCalculator account={account} symbol={symbol} livePrice={livePrice} />
+          <RiskCalculator account={account} circuit={circuit} symbol={symbol} livePrice={livePrice} />
         </CardContent>
       </Card>
     </div>

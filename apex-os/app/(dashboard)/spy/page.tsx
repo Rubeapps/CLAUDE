@@ -1,4 +1,4 @@
-import { Activity, Boxes, Radar, Store } from "lucide-react";
+import { Activity, Boxes, Flame, Radar, Store } from "lucide-react";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ProductFeed } from "@/components/spy/ProductFeed";
@@ -21,6 +21,7 @@ export default async function SpyPage() {
     { label: "Ativas", value: data.totals.active, icon: Radar },
     { label: "Produtos monitorizados", value: data.totals.products, icon: Boxes },
     { label: "Mudanças de preço (24h)", value: data.totals.changes24h, icon: Activity },
+    { label: "A escalar (72h)", value: data.totals.scaling, icon: Flame },
   ];
 
   return (
@@ -31,7 +32,7 @@ export default async function SpyPage() {
         actions={<Badge variant={telegram ? "success" : "secondary"}>Telegram {telegram ? "ligado" : "não configurado"}</Badge>}
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {stats.map(({ label, value, icon: Icon }) => (
           <Card key={label}>
             <CardContent className="flex items-center justify-between p-4">
@@ -61,7 +62,7 @@ export default async function SpyPage() {
             <CardDescription>Novidades, preços e ruturas das lojas concorrentes.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ProductFeed newest={data.newest} priceChanges={data.priceChanges} outOfStock={data.outOfStock} stores={data.targets.map((t) => t.store_name)} />
+            <ProductFeed newest={data.newest} priceChanges={data.priceChanges} outOfStock={data.outOfStock} scaling={data.scaling} stores={data.targets.map((t) => t.store_name)} />
           </CardContent>
         </Card>
       </div>

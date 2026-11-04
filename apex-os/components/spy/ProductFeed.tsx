@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownRight, ArrowUpRight, ImageOff, PackageX, Sparkles, Tags } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Flame, ImageOff, PackageX, Sparkles, Tags } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -9,7 +9,7 @@ import type { FeedPriceChange, FeedProduct } from "@/lib/data/spy";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Tab = "new" | "prices" | "oos";
+type Tab = "new" | "prices" | "scaling" | "oos";
 
 function productUrl(p: FeedProduct): string {
   return `${p.storeUrl}/products/${encodeURIComponent(p.handle)}`;
@@ -45,7 +45,19 @@ function ProductLine({ product, right, meta }: { product: FeedProduct; right: Re
   );
 }
 
-export function ProductFeed({ newest, priceChanges, outOfStock, stores }: { newest: FeedProduct[]; priceChanges: FeedPriceChange[]; outOfStock: FeedProduct[]; stores: string[] }) {
+export function ProductFeed({
+  newest,
+  priceChanges,
+  outOfStock,
+  scaling,
+  stores,
+}: {
+  newest: FeedProduct[];
+  priceChanges: FeedPriceChange[];
+  outOfStock: FeedProduct[];
+  scaling: FeedProduct[];
+  stores: string[];
+}) {
   const [tab, setTab] = useState<Tab>("new");
   const [store, setStore] = useState<string>("all");
 
@@ -55,12 +67,14 @@ export function ProductFeed({ newest, priceChanges, outOfStock, stores }: { newe
       new: newest.filter(match),
       prices: priceChanges.filter((c) => match(c.product)),
       oos: outOfStock.filter(match),
+      scaling: scaling.filter(match),
     };
-  }, [newest, priceChanges, outOfStock, store]);
+  }, [newest, priceChanges, outOfStock, scaling, store]);
 
   const tabs: { id: Tab; label: string; count: number; icon: typeof Sparkles }[] = [
     { id: "new", label: "Novos", count: filtered.new.length, icon: Sparkles },
     { id: "prices", label: "Preços", count: filtered.prices.length, icon: Tags },
+    { id: "scaling", label: "A escalar", count: filtered.scaling.length, icon: Flame },
     { id: "oos", label: "Ruturas", count: filtered.oos.length, icon: PackageX },
   ];
 
@@ -106,6 +120,7 @@ export function ProductFeed({ newest, priceChanges, outOfStock, stores }: { newe
                       <p className="text-xs tabular-nums text-muted-foreground line-through">{formatNumber(p.compare_at_price)}</p>
                     ) : null}
                     {!p.is_available ? <Badge variant="destructive">sem stock</Badge> : null}
+                    {p.is_scaling ? <Badge variant="default">a escalar</Badge> : null}
                   </div>
                 }
               />
@@ -137,6 +152,29 @@ export function ProductFeed({ newest, priceChanges, outOfStock, stores }: { newe
                 />
               );
             })}
+          </ul>
+        ))}
+
+      {tab === "scaling" &&
+        (filtered.scaling.length === 0 ? (
+          <EmptyState icon={Flame} title="Nenhum produto a escalar" description="Produtos com tag best-seller ou movimento de stock nas últimas 72h aparecem aqui." />
+        ) : (
+          <ul className="divide-y">
+            {filtered.scaling.map((p) => (
+              <ProductLine
+                key={p.id}
+                product={p}
+                meta={`sinal ${formatDateTime(p.scaling_detected_at)} · ${p.available_variants ?? "?"} variantes disponíveis`}
+                right={
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold tabular-nums">{formatNumber(p.current_price)}</p>
+                    <Badge variant="default">
+                      <Flame className="mr-1 h-3 w-3" /> a escalar
+                    </Badge>
+                  </div>
+                }
+              />
+            ))}
           </ul>
         ))}
 

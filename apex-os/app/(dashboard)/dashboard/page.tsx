@@ -1,12 +1,14 @@
 import { ArrowRight, CandlestickChart, Radar, ShoppingCart } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { WarChestPanel } from "@/components/dashboard/WarChestPanel";
 import { ProfitChart } from "@/components/dropship/ProfitChart";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDropshipData } from "@/lib/data/dropship";
 import { getSpyData } from "@/lib/data/spy";
 import { getAllTradingStats } from "@/lib/data/trading";
+import { getWarChestSettings } from "@/lib/data/war-chest";
 import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatRatio } from "@/lib/format";
 import { requireUser } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
@@ -28,7 +30,12 @@ function toneOf(value: number): "positive" | "negative" | undefined {
 
 export default async function DashboardPage() {
   const { supabase, user } = await requireUser();
-  const [dropship, spy, trading] = await Promise.all([getDropshipData(supabase, user.id, 30), getSpyData(supabase, user.id, 8), getAllTradingStats(supabase, user.id)]);
+  const [dropship, spy, trading, warChest] = await Promise.all([
+    getDropshipData(supabase, user.id, 30),
+    getSpyData(supabase, user.id, 8),
+    getAllTradingStats(supabase, user.id),
+    getWarChestSettings(supabase, user.id),
+  ]);
   const { summary, today, currency } = dropship;
   const totalBalance = trading.accounts.reduce((sum, a) => sum + a.balance, 0);
   const balanceCurrency = trading.accounts[0]?.currency ?? "USD";
@@ -105,6 +112,16 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>War Chest — alocação de capital</CardTitle>
+          <CardDescription>Divide o lucro líquido do dropshipping entre reinvestimento, reserva de emergência/impostos e injeção na conta de trading.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <WarChestPanel settings={warChest} todayProfit={today?.netProfit ?? 0} periodProfit={summary.netProfit} periodDays={summary.days} currency={currency} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -89,3 +89,69 @@ test("R:R, P&L, R múltiplo e Profit Factor", () => {
   assert.equal(stats.profitFactor, 2);
   assert.equal(stats.maxDrawdown, 50);
 });
+
+test("engine: unit economics e break-even diário", async () => {
+  const { calculateUnitEconomics, calculateDailyBreakEven } = await import("../lib/calculations/engine.ts");
+  const u = calculateUnitEconomics(100, 30, 10, 0.25, 0.015);
+  assert.equal(u.gatewayFee, 1.75);
+  assert.equal(u.netProfit, 58.25);
+  assert.equal(u.marginPct, 58.25);
+  const d = calculateDailyBreakEven(1000, 300, 100, 20, 200);
+  assert.equal(d.dailyProfit, 380);
+  assert.equal(d.breakEvenRoas, 1.72);
+  assert.equal(d.currentRoas, 5);
+});
+
+test("engine: fadiga de criativos", async () => {
+  const { calculateAdFatigue } = await import("../lib/calculations/engine.ts");
+  const healthy = calculateAdFatigue({ impressions: 10000, videoPlays3s: 3000, thruplays: 600, frequency: 1.4, ctr: 1.8, cpa: 12, breakEvenCpa: 20 });
+  assert.equal(healthy.hookRate, 30);
+  assert.equal(healthy.holdRate, 20);
+  assert.equal(healthy.isFatigued, false);
+  assert.equal(calculateAdFatigue({ impressions: 1, videoPlays3s: 0, thruplays: 0, frequency: 2.2, ctr: 2, cpa: 1, breakEvenCpa: 5 }).isFatigued, true);
+  const lowCtr = calculateAdFatigue({ impressions: 0, videoPlays3s: 0, thruplays: 0, frequency: 1, ctr: 0.8, cpa: 25, breakEvenCpa: 20 });
+  assert.equal(lowCtr.isFatigued, true);
+  assert.equal(lowCtr.hookRate, null);
+});
+
+test("engine: posição, circuit breaker e war chest", async () => {
+  const { calculatePositionSize, checkTradingCircuitBreaker, calculateWarChestAllocation } = await import("../lib/calculations/engine.ts");
+  const p = calculatePositionSize(10000, 1, 100, 102, "SHORT");
+  assert.equal(p.valid, true);
+  assert.equal(p.units, 50);
+  assert.equal(calculatePositionSize(10000, 1, 100, 102, "LONG").valid, false);
+  const cb = checkTradingCircuitBreaker(300, 10000, 3, new Date("2026-03-01T15:00:00Z"));
+  assert.equal(cb.isLocked, true);
+  assert.equal(cb.unlocksAt, "2026-03-02T00:00:00.000Z");
+  assert.equal(checkTradingCircuitBreaker(299.99, 10000, 3).isLocked, false);
+  const w = calculateWarChestAllocation(333.33, { reinvestPct: 50, emergencyPct: 30, tradingPct: 20 });
+  assert.equal(w.emergency, 100);
+  assert.equal(w.trading, 66.67);
+  assert.equal(w.reinvest, 166.66);
+  assert.equal(calculateWarChestAllocation(100, { reinvestPct: 50, emergencyPct: 30, tradingPct: 10 }).valid, false);
+  assert.equal(calculateWarChestAllocation(-50, { reinvestPct: 50, emergencyPct: 30, tradingPct: 20 }).distributable, 0);
+});
+
+test("parser CSV Meta Ads (EN com aspas e PT com ;)", async () => {
+  const { parseMetaAdsCsv, parseLocaleNumber } = await import("../lib/meta-csv.ts");
+  const en = [
+    "﻿Reporting starts,Campaign name,Ad name,Amount spent (EUR),Impressions,3-second video plays,ThruPlays,Frequency,CTR (link click-through rate),Cost per result",
+    '2026-03-01,Prospecting,"Hook A, UGC",120.50,"10,000",3000,600,1.40,1.85,12.05',
+    ",,,,,,,,,",
+    "2026-03-01,Prospecting,,500,40000,0,0,2,1,0",
+  ].join("\n");
+  const r = parseMetaAdsCsv(en);
+  assert.deepEqual(r.missingRequired, []);
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0]?.adName, "Hook A, UGC");
+  assert.equal(r.rows[0]?.impressions, 10000);
+  assert.equal(r.rows[0]?.date, "2026-03-01");
+  const pt = "Nome da campanha;Nome do anúncio;Valor gasto (EUR);Impressões;Frequência;CTR (taxa de cliques no link);Custo por resultado\nC1;Ad 1;1.234,56;5000;2,30;0,8;25,40";
+  const p = parseMetaAdsCsv(pt);
+  assert.equal(p.rows[0]?.spend, 1234.56);
+  assert.equal(p.rows[0]?.frequency, 2.3);
+  assert.equal(p.rows[0]?.ctr, 0.8);
+  assert.ok(p.missingOptional.includes("videoPlays3s"));
+  assert.equal(parseLocaleNumber("€ 3,20"), 3.2);
+  assert.equal(parseMetaAdsCsv("foo,bar\n1,2").missingRequired.length, 4);
+});

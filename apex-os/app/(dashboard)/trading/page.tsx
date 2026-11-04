@@ -31,6 +31,12 @@ export default async function TradingPage({ searchParams }: { searchParams: Prom
     { label: "Profit Factor", value: formatRatio(stats.profitFactor, ""), hint: "Σ ganhos / Σ |perdas|" },
     { label: "Win rate", value: formatPercent(stats.winRate), hint: `${stats.wins}W / ${stats.losses}L` },
     { label: "Média R", value: stats.averageR === null ? "—" : `${stats.averageR.toFixed(2)}R`, hint: `Max DD ${formatNumber(stats.maxDrawdown)}` },
+    {
+      label: "P&L da sessão",
+      value: data.circuit ? formatNumber(data.circuit.sessionPnl) : "—",
+      hint: data.circuit ? `Limite −${formatNumber(data.circuit.breaker.maxDailyLoss)} (${data.circuit.maxDailyLossPercent}%)${data.circuit.breaker.isLocked ? " · BLOQUEADO" : ""}` : undefined,
+      tone: data.circuit ? (data.circuit.breaker.isLocked ? "negative" : data.circuit.sessionPnl > 0 ? "positive" : data.circuit.sessionPnl < 0 ? "negative" : undefined) : undefined,
+    },
   ] as const;
 
   return (
@@ -39,7 +45,7 @@ export default async function TradingPage({ searchParams }: { searchParams: Prom
 
       <AccountsManager accounts={data.accounts} selectedId={selectedAccount?.id ?? null} />
 
-      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-7">
         {kpis.map((k) => (
           <Card key={k.label}>
             <CardContent className="space-y-1 p-4">
@@ -51,7 +57,7 @@ export default async function TradingPage({ searchParams }: { searchParams: Prom
         ))}
       </div>
 
-      <TradingTerminal account={selectedAccount} openTrades={data.openTrades} />
+      <TradingTerminal account={selectedAccount} circuit={data.circuit} openTrades={data.openTrades} />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_2fr]">
         <Card>

@@ -11,6 +11,21 @@ import { requireUser } from "@/lib/supabase/server";
 const targetSchema = z.object({
   store_name: z.string().trim().min(1, "obrigatório").max(120),
   store_url: z.string().trim().min(1, "obrigatório").max(300),
+  meta_page_id: z
+    .string()
+    .trim()
+    .regex(/^\d{5,25}$/, "Page ID da Meta tem de ser numérico")
+    .optional()
+    .or(z.literal("")),
+});
+
+const metaSchema = z.object({
+  id: z.string().uuid(),
+  meta_page_id: z
+    .string()
+    .trim()
+    .regex(/^\d{5,25}$/, "Page ID da Meta tem de ser numérico")
+    .or(z.literal("")),
 });
 
 const idSchema = z.object({ id: z.string().uuid() });
@@ -46,10 +61,29 @@ export async function addTarget(_prev: ActionState, formData: FormData): Promise
   if (probeError) return actionError(probeError);
 
   const { supabase, user } = await requireUser();
-  const { error } = await supabase.from("spy_targets").insert({ user_id: user.id, store_name: parsed.data.store_name, store_url: storeUrl });
+  const { error } = await supabase.from("spy_targets").insert({
+    user_id: user.id,
+    store_name: parsed.data.store_name,
+    store_url: storeUrl,
+    meta_page_id: parsed.data.meta_page_id ? parsed.data.meta_page_id : null,
+  });
   if (error) return actionError(error.code === "23505" ? "Já estás a monitorizar esta loja." : error.message);
   revalidate();
   return actionSuccess(`${parsed.data.store_name} adicionada. Corre um scan para gravar o catálogo base.`);
+}
+
+export async function updateMetaPageId(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const parsed = metaSchema.safeParse(formToObject(formData));
+  if (!parsed.success) return actionError(zodMessage(parsed.error));
+  const { supabase, user } = await requireUser();
+  const { error } = await supabase
+    .from("spy_targets")
+    .update({ meta_page_id: parsed.data.meta_page_id.length > 0 ? parsed.data.meta_page_id : null })
+    .eq("id", parsed.data.id)
+    .eq("user_id", user.id);
+  if (error) return actionError(error.message);
+  revalidate();
+  return actionSuccess(parsed.data.meta_page_id ? "Meta Page ID guardado." : "Meta Page ID removido.");
 }
 
 export async function toggleTarget(formData: FormData): Promise<void> {
@@ -88,5 +122,5 @@ export async function scanNow(_prev: ActionState, formData: FormData): Promise<A
   revalidate();
   if (!result.ok) return actionError(result.error ?? "Scan falhou.");
   if (result.baseline) return actionSuccess(`Catálogo base: ${result.scanned} produtos gravados.`);
-  return actionSuccess(`${result.scanned} produtos · ${result.newProducts} novos · ${result.priceChanges} preços · ${result.stockOuts} ruturas.`);
+  return actionSuccess(`${result.scanned} produtos · ${result.newProducts} novos · ${result.priceChanges} preços · ${result.stockOuts} ruturas · ${result.scaling} a escalar.`);
 }

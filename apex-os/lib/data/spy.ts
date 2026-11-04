@@ -26,7 +26,8 @@ export interface SpyData {
   newest: FeedProduct[];
   priceChanges: FeedPriceChange[];
   outOfStock: FeedProduct[];
-  totals: { targets: number; active: number; products: number; changes24h: number };
+  scaling: FeedProduct[];
+  totals: { targets: number; active: number; products: number; changes24h: number; scaling: number };
 }
 
 function normalizeProduct(row: SpyTrackedProductRow, targets: Map<string, SpyTargetRow>): FeedProduct {
@@ -49,7 +50,7 @@ export async function getSpyData(supabase: TypedSupabaseClient, userId: string, 
   const targetMap = new Map(targetRows.map((t) => [t.id, t]));
   const targetIds = targetRows.map((t) => t.id);
   if (targetIds.length === 0) {
-    return { targets: [], newest: [], priceChanges: [], outOfStock: [], totals: { targets: 0, active: 0, products: 0, changes24h: 0 } };
+    return { targets: [], newest: [], priceChanges: [], outOfStock: [], scaling: [], totals: { targets: 0, active: 0, products: 0, changes24h: 0, scaling: 0 } };
   }
 
   const countPromises = targetIds.map(async (id) => {
@@ -62,11 +63,19 @@ export async function getSpyData(supabase: TypedSupabaseClient, userId: string, 
     return { id, productCount: all.count ?? 0, outOfStock: oos.count ?? 0 };
   });
 
-  const [counts, newestRes, oosRes] = await Promise.all([
+  const [counts, newestRes, oosRes, scalingRes] = await Promise.all([
     Promise.all(countPromises),
     supabase.from("spy_tracked_products").select("*").in("target_id", targetIds).order("published_at", { ascending: false, nullsFirst: false }).limit(feedLimit),
     supabase.from("spy_tracked_products").select("*").in("target_id", targetIds).eq("is_available", false).order("last_updated_at", { ascending: false }).limit(feedLimit),
+    supabase
+      .from("spy_tracked_products")
+      .select("*", { count: "exact" })
+      .in("target_id", targetIds)
+      .eq("is_scaling", true)
+      .order("scaling_detected_at", { ascending: false, nullsFirst: false })
+      .limit(feedLimit),
   ]);
+  if (scalingRes.error) throw new Error(scalingRes.error.message);
   if (newestRes.error) throw new Error(newestRes.error.message);
   if (oosRes.error) throw new Error(oosRes.error.message);
 
@@ -107,7 +116,9 @@ export async function getSpyData(supabase: TypedSupabaseClient, userId: string, 
     newest: newestRes.data.map((p) => normalizeProduct(p, targetMap)),
     priceChanges,
     outOfStock: oosRes.data.map((p) => normalizeProduct(p, targetMap)),
+    scaling: scalingRes.data.map((p) => normalizeProduct(p, targetMap)),
     totals: {
+      scaling: scalingRes.count ?? scalingRes.data.length,
       targets: targets.length,
       active: targets.filter((t) => t.is_active).length,
       products: targets.reduce((sum, t) => sum + t.productCount, 0),

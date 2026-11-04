@@ -1,7 +1,7 @@
 import "server-only";
 
 import { aggregateDailyPnl, summarizePnl, toDateKey, type DailyPnl, type PnlSummary } from "@/lib/calculations/unit-economics";
-import type { DropshipAdSpendRow, DropshipOrderRow, DropshipProductRow, DropshipStoreRow } from "@/lib/database.types";
+import type { DropshipAdCreativeRow, DropshipAdSpendRow, DropshipOrderRow, DropshipProductRow, DropshipStoreRow } from "@/lib/database.types";
 import { getAppTimeZone } from "@/lib/format";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 
@@ -24,6 +24,25 @@ export interface DropshipData {
   recentOrders: DropshipOrderRow[];
   adSpend: DropshipAdSpendRow[];
   stores: DropshipStoreRow[];
+  /** Break-even CPA sugerido = lucro médio por encomenda antes de ads no período. */
+  breakEvenCpa: number | null;
+}
+
+/** Criativos da importação mais recente (todas as linhas da data mais recente guardada). */
+export async function getLatestAdCreatives(supabase: TypedSupabaseClient, userId: string): Promise<DropshipAdCreativeRow[]> {
+  const { data: latest, error } = await supabase.from("dropship_ad_creatives").select("date").eq("user_id", userId).order("date", { ascending: false }).limit(1);
+  if (error) throw new Error(error.message);
+  const date = latest[0]?.date;
+  if (!date) return [];
+  const { data, error: rowsError } = await supabase.from("dropship_ad_creatives").select("*").eq("user_id", userId).eq("date", date).order("spend", { ascending: false }).limit(500);
+  if (rowsError) throw new Error(rowsError.message);
+  return data.map((r) => ({
+    ...r,
+    spend: Number(r.spend),
+    frequency: r.frequency === null ? null : Number(r.frequency),
+    ctr: r.ctr === null ? null : Number(r.ctr),
+    cpa: r.cpa === null ? null : Number(r.cpa),
+  }));
 }
 
 function shiftDateKey(dateKey: string, days: number): string {
@@ -62,6 +81,7 @@ export async function getDropshipData(supabase: TypedSupabaseClient, userId: str
   const adSpend = (adRes.data ?? []).map((a) => ({ ...a, amount: Number(a.amount) }));
 
   const daily = aggregateDailyPnl({ orders, adSpend, from, to, timeZone });
+  const summary = summarizePnl(daily);
   const currencyCounts = new Map<string, number>();
   for (const o of orders) currencyCounts.set(o.currency, (currencyCounts.get(o.currency) ?? 0) + 1);
   const currency = [...currencyCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "EUR";
@@ -71,7 +91,8 @@ export async function getDropshipData(supabase: TypedSupabaseClient, userId: str
     to,
     currency,
     daily,
-    summary: summarizePnl(daily),
+    summary,
+    breakEvenCpa: summary.orders > 0 && summary.orderProfit > 0 ? Math.round((summary.orderProfit / summary.orders) * 100) / 100 : null,
     today: daily[daily.length - 1] ?? null,
     products: (productsRes.data ?? []).map((p) => ({ ...p, cogs: Number(p.cogs), shipping_cost: Number(p.shipping_cost) })),
     recentOrders: orders.slice(0, 25),
