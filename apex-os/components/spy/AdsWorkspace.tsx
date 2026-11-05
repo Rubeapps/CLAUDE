@@ -13,6 +13,7 @@ import type { SpyAdCreativeRow } from "@/lib/database.types";
 import type { AdTargetOption } from "@/lib/data/spy-ads";
 import { formatDateTime } from "@/lib/format";
 import { AdCreativeCard, type AdCardData } from "./AdCreativeCard";
+import { AdLibraryImporter } from "./AdLibraryImporter";
 
 type SortKey = "score" | "recent" | "days" | "copies";
 type TierFilter = "all" | "winners" | "scaling" | "inactive";
@@ -82,7 +83,19 @@ export function AdsGridSkeleton({ count = 8 }: { count?: number }) {
   );
 }
 
-export function AdsWorkspace({ ads, targets, lastSyncAt, metaConfigured }: { ads: SpyAdCreativeRow[]; targets: AdTargetOption[]; lastSyncAt: string | null; metaConfigured: boolean }) {
+export function AdsWorkspace({
+  ads,
+  targets,
+  lastSyncAt,
+  metaConfigured,
+  autoOpenImport,
+}: {
+  ads: SpyAdCreativeRow[];
+  targets: AdTargetOption[];
+  lastSyncAt: string | null;
+  metaConfigured: boolean;
+  autoOpenImport: boolean;
+}) {
   const router = useRouter();
   const [isRefreshing, startTransition] = useTransition();
   const [syncing, setSyncing] = useState(false);
@@ -167,10 +180,12 @@ export function AdsWorkspace({ ads, targets, lastSyncAt, metaConfigured }: { ads
 
   return (
     <div className="space-y-5">
+      <AdLibraryImporter targets={targets} autoOpen={autoOpenImport || !metaConfigured} />
       <div className="space-y-3 rounded-lg border bg-card p-4">
+        <p className="text-sm font-medium">Sincronização automática pela API oficial da Meta</p>
         {!metaConfigured ? (
           <p className="rounded-md border border-amber-400/50 bg-amber-400/10 p-2 text-xs text-amber-300">
-            Falta configurar <code>META_ACCESS_TOKEN</code> na Vercel. Sem ele a sincronização devolve erro.
+            Opcional: sem <code>META_ACCESS_TOKEN</code> na Vercel esta sincronização não funciona. Usa a importação pelo botão acima, que é grátis e não precisa de token.
           </p>
         ) : null}
         <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_auto] md:items-end">
