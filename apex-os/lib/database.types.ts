@@ -283,6 +283,53 @@ export type DropshipAdCreativeInsert = {
   created_at?: string | null;
 };
 
+export type SpyAdCreativeRow = {
+  id: string;
+  user_id: string;
+  target_id: string | null;
+  page_id: string;
+  page_name: string | null;
+  ad_archive_id: string;
+  ad_caption: string | null;
+  headline: string | null;
+  cta_type: string | null;
+  landing_page_url: string | null;
+  video_url: string | null;
+  thumbnail_url: string | null;
+  ad_platforms: string[] | null;
+  first_active_date: string;
+  days_active: number;
+  active_copies_count: number;
+  winner_score: number;
+  is_scaling: boolean | null;
+  is_active: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+export type SpyAdCreativeInsert = {
+  id?: string;
+  user_id: string;
+  target_id?: string | null;
+  page_id: string;
+  page_name?: string | null;
+  ad_archive_id: string;
+  ad_caption?: string | null;
+  headline?: string | null;
+  cta_type?: string | null;
+  landing_page_url?: string | null;
+  video_url?: string | null;
+  thumbnail_url?: string | null;
+  ad_platforms?: string[] | null;
+  first_active_date: string;
+  days_active?: number;
+  active_copies_count?: number;
+  winner_score?: number;
+  is_scaling?: boolean | null;
+  is_active?: boolean | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -297,6 +344,7 @@ export type Database = {
       trading_journal: TableDef<TradingJournalRow, TradingJournalInsert, Partial<TradingJournalInsert>>;
       war_chest_settings: TableDef<WarChestSettingsRow, WarChestSettingsInsert, Partial<WarChestSettingsInsert>>;
       dropship_ad_creatives: TableDef<DropshipAdCreativeRow, DropshipAdCreativeInsert, Partial<DropshipAdCreativeInsert>>;
+      spy_ad_creatives: TableDef<SpyAdCreativeRow, SpyAdCreativeInsert, Partial<SpyAdCreativeInsert>>;
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };

@@ -1,6 +1,6 @@
 "use client";
 
-import { CandlestickChart, LayoutDashboard, LogOut, Menu, Radar, ShoppingCart, X } from "lucide-react";
+import { CandlestickChart, LayoutDashboard, LogOut, Megaphone, Menu, Radar, ShoppingCart, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -10,17 +10,22 @@ const NAV = [
   { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
   { href: "/dropship", label: "Dropshipping P&L", icon: ShoppingCart },
   { href: "/spy", label: "Spy Engine", icon: Radar },
+  { href: "/spy/ads", label: "Anúncios Meta", icon: Megaphone },
   { href: "/trading", label: "Trading", icon: CandlestickChart },
 ] as const;
 
 export function Sidebar({ email }: { email: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  // Destaca só o item mais específico (ex.: /spy/ads não acende também /spy).
+  const activeHref = NAV.map((n) => n.href)
+    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.length - a.length)[0];
 
   const nav = (
     <nav className="flex flex-1 flex-col gap-1">
       {NAV.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href || pathname.startsWith(`${href}/`);
+        const active = href === activeHref;
         return (
           <Link
             key={href}

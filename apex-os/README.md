@@ -12,7 +12,7 @@ Tudo corre em camadas gratuitas: Vercel/qualquer host Node, Supabase Free, GitHu
 
 ## Arranque
 
-1. **Supabase**: cria um projeto, abre *SQL Editor* e executa `supabase/schema.sql` , depois `supabase/migrations/002_control_features.sql` , `supabase/migrations/003_rls_performance.sql` e `supabase/migrations/004_shipping_tiers.sql`.
+1. **Supabase**: cria um projeto, abre *SQL Editor* e executa `supabase/schema.sql` , depois `supabase/migrations/002_control_features.sql` , `supabase/migrations/003_rls_performance.sql` `supabase/migrations/004_shipping_tiers.sql` e `supabase/migrations/005_spy_ad_creatives.sql`.
    Em *Authentication → URL Configuration* adiciona `<SITE_URL>/auth/callback` aos redirect URLs.
 2. **Variáveis**: `cp .env.example .env.local` e preenche.
 3. **Correr**:
@@ -50,6 +50,14 @@ curl -X POST "$APEX_BASE_URL/api/cron/spy-runner?summary=true" -H "Authorization
 - RLS ativo em todas as tabelas; páginas e Server Actions usam o cliente anon + sessão e filtram também por `user_id`.
 - Webhook e cron (sem sessão) usam a service role, sempre com filtro explícito por `user_id`/`target_id`.
 - HMAC e Bearer comparados em tempo constante (`timingSafeEqual`).
+
+## Meta Ad Intelligence (`/spy/ads`, migração 005)
+
+- Introduz um **Meta Page ID** (ou link da Ad Library com `view_all_page_id`) ou escolhe uma loja do Spy com Page ID e carrega em *Sincronizar anúncios* (`POST /api/spy/ads/sync`).
+- Usa a Graph API `/ads_archive` (anúncios **ativos** entregues na UE). Anúncios com o mesmo texto/título/domínio são agrupados num criativo e contados em `active_copies_count`.
+- **Winner Score** (0–100) = min(50, dias ativos × 2.5) + min(50, cópias × 5). Em escala: ≥ 5 cópias ou ≥ 14 dias com ≥ 3 cópias. Tiers: Novo, Em teste, Estável, Winner provável, Winner escala.
+- O cron do Spy também sincroniza as lojas ativas com Meta Page ID.
+- Requer `META_ACCESS_TOKEN` (app Meta com identidade verificada, gratuito). **A API não devolve o ficheiro do vídeo/imagem, o CTA nem o URL de destino completo**: o cartão mostra o link para o anúncio na Meta Library e permite colar o link do MP4 para o leitor e o download.
 
 ## Funcionalidades de controlo (migração 002)
 

@@ -179,3 +179,29 @@ test("portes por escalão e soma de variantes do mesmo produto", async () => {
   assert.equal(r.totalShipping, 9);
   assert.equal(r.netProfit, 56);
 });
+
+test("Winner Score de criativos Meta", async () => {
+  const { calculateAdWinnerScore } = await import("../lib/calculations/ad-scoring.ts");
+  const now = new Date("2026-03-31T12:00:00Z");
+  const fresh = calculateAdWinnerScore({ firstActiveDate: "2026-03-31", activeCopiesCount: 1 }, now);
+  assert.equal(fresh.daysActive, 1);
+  assert.equal(fresh.winnerScore, 8);
+  assert.equal(fresh.tier, "NOVO");
+  const testing = calculateAdWinnerScore({ firstActiveDate: "2026-03-28", activeCopiesCount: 1 }, now);
+  assert.equal(testing.daysActive, 4);
+  assert.equal(testing.tier, "TESTE");
+  const stable = calculateAdWinnerScore({ firstActiveDate: "2026-03-21", activeCopiesCount: 2 }, now);
+  assert.equal(stable.winnerScore, 38);
+  assert.equal(stable.tier, "ESTAVEL");
+  const stableScaling = calculateAdWinnerScore({ firstActiveDate: "2026-03-15", activeCopiesCount: 3 }, now);
+  assert.equal(stableScaling.daysActive, 17);
+  assert.equal(stableScaling.winnerScore, 58);
+  assert.equal(stableScaling.isScaling, true);
+  assert.equal(stableScaling.tier, "ESTAVEL");
+  const probable = calculateAdWinnerScore({ firstActiveDate: "2026-03-15", activeCopiesCount: 5 }, now);
+  assert.equal(probable.winnerScore, 68);
+  assert.equal(probable.tier, "WINNER_PROVAVEL");
+  const winner = calculateAdWinnerScore({ firstActiveDate: "2026-02-01", activeCopiesCount: 12 }, now);
+  assert.equal(winner.winnerScore, 100);
+  assert.equal(winner.tier, "WINNER_ESCALA");
+});
