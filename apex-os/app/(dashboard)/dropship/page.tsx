@@ -6,6 +6,7 @@ import { MetricsCards } from "@/components/dropship/MetricsCards";
 import { ProductCostsTable } from "@/components/dropship/ProductCostsTable";
 import { ProductsManager } from "@/components/dropship/ProductsManager";
 import { ProfitChart } from "@/components/dropship/ProfitChart";
+import { ScenarioSimulator } from "@/components/dropship/ScenarioSimulator";
 import { StoreConnect } from "@/components/dropship/StoreConnect";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { RangeTabs } from "@/components/layout/RangeTabs";
@@ -47,6 +48,25 @@ export default async function DropshipPage({ searchParams }: { searchParams: Pro
         </CardHeader>
         <CardContent>
           <ProfitChart daily={data.daily} currency={currency} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Simulador de cenários (what-if)</CardTitle>
+          <CardDescription>E se o CPA subir, o fornecedor aumentar os portes ou as devoluções dispararem? Começa com os teus valores reais do período.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ScenarioSimulator
+            currency={currency}
+            defaults={{
+              aov: data.summary.aov ?? 35,
+              cogsPerOrder: data.summary.orders > 0 ? data.summary.cogs / data.summary.orders : 8,
+              shippingPerOrder: data.summary.orders > 0 ? data.summary.shipping / data.summary.orders : 4,
+              cpa: data.summary.orders > 0 && data.summary.adSpend > 0 ? data.summary.adSpend / data.summary.orders : 15,
+              ordersPerMonth: data.summary.orders > 0 ? (data.summary.orders / Math.max(1, data.summary.days)) * 30 : 100,
+            }}
+          />
         </CardContent>
       </Card>
 

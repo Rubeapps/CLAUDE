@@ -83,12 +83,13 @@ export async function sendTelegramMessage(markdownV2Text: string, chatId?: strin
   return { ok: false, error: "Telegram: tentativas esgotadas." };
 }
 
-export type AlertSeverity = "INFO" | "DROPSHIP" | "SPY" | "CIRCUIT BREAKER";
+export type AlertSeverity = "INFO" | "DROPSHIP" | "SPY" | "TRADING" | "CIRCUIT BREAKER";
 
 const SEVERITY_ICON: Record<AlertSeverity, string> = {
   INFO: "ℹ️",
   DROPSHIP: "🛒",
   SPY: "🕵️",
+  TRADING: "🤖",
   "CIRCUIT BREAKER": "🚨",
 };
 
