@@ -1,9 +1,11 @@
 import { Activity, Boxes, Flame, Radar, Store } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ProductFeed } from "@/components/spy/ProductFeed";
 import { TargetsManager } from "@/components/spy/TargetsManager";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getSpyData } from "@/lib/data/spy";
 import { requireUser } from "@/lib/supabase/server";
@@ -29,7 +31,14 @@ export default async function SpyPage() {
       <PageHeader
         title="Shopify Spy Engine"
         description="Lê /products.json de cada loja: deteta produtos novos, alterações de preço e ruturas de stock."
-        actions={<Badge variant={telegram ? "success" : "secondary"}>Telegram {telegram ? "ligado" : "não configurado"}</Badge>}
+        actions={
+          <>
+            <Badge variant={telegram ? "success" : "secondary"}>Telegram {telegram ? "ligado" : "não configurado"}</Badge>
+            <Link href="/spy/ads" className={buttonVariants({ size: "sm" })}>
+              Anúncios Meta
+            </Link>
+          </>
+        }
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">

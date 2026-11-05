@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireServerEnv } from "@/lib/env";
 import { errorMessage, jsonError } from "@/lib/http";
+import { isMetaConfigured, parsePageId, syncPageAds, type AdsSyncResult } from "@/lib/meta-ads";
 import { scanTargets, type TargetScanResult } from "@/lib/spy-engine";
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatRunSummary, isTelegramConfigured, sendTelegramAlert } from "@/lib/telegram";
@@ -15,7 +16,16 @@ const querySchema = z.object({
   target_id: z.string().uuid().optional(),
   notify: z.enum(["true", "false"]).optional(),
   summary: z.enum(["true", "false"]).optional(),
+  /** "false" desativa a sincronização de anúncios Meta nesta execução. */
+  ads: z.enum(["true", "false"]).optional(),
 });
+
+interface AdsSyncOutcome {
+  targetId: string;
+  ok: boolean;
+  result?: AdsSyncResult;
+  error?: string;
+}
 
 interface CronResponseBody {
   ok: boolean;
@@ -24,6 +34,7 @@ interface CronResponseBody {
   targets: number;
   totals: { scanned: number; new_products: number; price_changes: number; price_drops: number; stock_outs: number; scaling: number; errors: number };
   results: TargetScanResult[];
+  ads: AdsSyncOutcome[];
 }
 
 function isAuthorized(request: NextRequest, secret: string): boolean {
@@ -52,7 +63,7 @@ async function run(request: NextRequest) {
     const startedAt = new Date().toISOString();
     const supabase = createServiceClient();
 
-    let targetsQuery = supabase.from("spy_targets").select("id, store_name, store_url, last_scraped_at").eq("is_active", true).order("last_scraped_at", { ascending: true, nullsFirst: true });
+    let targetsQuery = supabase.from("spy_targets").select("id, user_id, store_name, store_url, last_scraped_at, meta_page_id").eq("is_active", true).order("last_scraped_at", { ascending: true, nullsFirst: true });
     if (query.data.target_id) targetsQuery = targetsQuery.eq("id", query.data.target_id);
 
     const { data: targets, error } = await targetsQuery;
@@ -63,6 +74,21 @@ async function run(request: NextRequest) {
 
     const notify = query.data.notify !== "false";
     const results = await scanTargets(supabase, targets, notify);
+
+    // Meta Ad Library: lojas ativas com Meta Page ID (sequencial para respeitar o rate limit da Meta).
+    const adsOutcomes: AdsSyncOutcome[] = [];
+    if (query.data.ads !== "false" && isMetaConfigured()) {
+      for (const target of targets) {
+        const pageId = target.meta_page_id ? parsePageId(target.meta_page_id) : null;
+        if (!pageId) continue;
+        try {
+          const result = await syncPageAds(supabase, { userId: target.user_id, pageId, targetId: target.id });
+          adsOutcomes.push({ targetId: target.id, ok: true, result });
+        } catch (adsError) {
+          adsOutcomes.push({ targetId: target.id, ok: false, error: errorMessage(adsError) });
+        }
+      }
+    }
 
     const totals = results.reduce(
       (acc, r) => ({
@@ -86,12 +112,13 @@ async function run(request: NextRequest) {
     }
 
     const body: CronResponseBody = {
-      ok: totals.errors === 0,
+      ok: totals.errors === 0 && adsOutcomes.every((a) => a.ok),
       started_at: startedAt,
       finished_at: new Date().toISOString(),
       targets: results.length,
       totals,
       results,
+      ads: adsOutcomes,
     };
     // 200 mesmo com falhas parciais (detalhe em results[]); 500 só para falhas globais.
     return NextResponse.json(body, { status: 200 });
