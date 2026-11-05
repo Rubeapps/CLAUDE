@@ -205,3 +205,40 @@ test("Winner Score de criativos Meta", async () => {
   assert.equal(winner.winnerScore, 100);
   assert.equal(winner.tier, "WINNER_ESCALA");
 });
+
+test("tesouraria: cascata P&L, ciclo de caixa, cofre fiscal e cenários", async () => {
+  const { calculatePnlCascade, calculateCashCycle, calculateTaxVault, simulateScenario } = await import("../lib/calculations/treasury.ts");
+  const p = calculatePnlCascade({ grossRevenue: 12300, refundsAndDiscounts: 0, cogs: 2000, shipping: 1000, gatewayFees: 300, platformFees: 0, adSpend: 4000, fixedCosts: 200, vatPercent: 23, incomeTaxPercent: 20 });
+  assert.equal(p.netRevenue, 12300);
+  assert.equal(p.contributionMargin, 5000);
+  assert.equal(p.ebitda, 4800);
+  assert.equal(p.vatReserve, 2300);
+  assert.equal(p.incomeTaxProvision, 500);
+  assert.equal(p.netCashProfit, 2000);
+  const c = calculateCashCycle({ dailyRevenue: 1000, dailyAdSpend: 400, dailySupplierCost: 300, gatewayPayoutDays: 5, supplierPaymentDays: 0, adBillingDays: 1, rollingReservePercent: 10, rollingReserveDays: 90 });
+  assert.equal(c.workingCapitalNeeded, 3100);
+  assert.equal(c.rollingReserveHeld, 9000);
+  assert.equal(c.recommendedCushion, 6000);
+  assert.equal(c.totalLiquidityRequired, 12100);
+  const v = calculateTaxVault({ revenue: 1230, netProfit: 500, vatPercent: 23, incomeTaxPercent: 20, rollingReservePercent: 10 });
+  assert.equal(v.vatReserved, 230);
+  assert.equal(v.incomeTaxReserved, 54);
+  assert.equal(v.rollingReserve, 123);
+  assert.equal(v.availableToSpend, 93);
+  const s = simulateScenario({ aov: 40, cogsPerOrder: 8, shippingPerOrder: 4, shippingDelta: 1, gatewayPercent: 1.5, gatewayFixed: 0.25, cpa: 15, returnRatePercent: 5, ordersPerMonth: 100, fixedCostsMonthly: 100 });
+  assert.equal(s.breakEvenCpa, 24.15);
+  assert.equal(s.profitPerOrder, 9.15);
+  assert.equal(s.monthlyNetProfit, 815);
+  assert.equal(s.breakEvenRoas, 1.66);
+  assert.equal(s.breakEvenOrders, 11);
+});
+
+test("assinatura HMAC da Binance (exemplo da documentação)", async () => {
+  const { signBinanceQuery, floorToStep, toBinanceDecimal } = await import("../lib/trading/binance-signer.ts");
+  const secret = "NhqPtmdSJYdKjVHjA7PZj4Mge3R5YNiP1e3UZjInClVN65XAbvqqM6A7H5fATj0j";
+  const query = "symbol=LTCBTC&side=BUY&type=LIMIT&timeInForce=GTC&quantity=1&price=0.1&recvWindow=5000&timestamp=1499827319559";
+  assert.equal(signBinanceQuery(query, secret), "c8db56825ae71d6d79447849e617115f4a920fa2acdcab2b053c4b2838bd6b71");
+  assert.equal(floorToStep(0.123456, 0.001), 0.123);
+  assert.equal(floorToStep(1.9999, 0.01), 1.99);
+  assert.equal(toBinanceDecimal(0.0000001), "0.0000001");
+});

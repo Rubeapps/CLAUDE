@@ -8,7 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { getDropshipData } from "@/lib/data/dropship";
 import { getSpyData } from "@/lib/data/spy";
 import { getAllTradingStats } from "@/lib/data/trading";
+import { getVaultSettings } from "@/lib/data/treasury";
 import { getWarChestSettings } from "@/lib/data/war-chest";
+import { calculateTaxVault } from "@/lib/calculations/treasury";
 import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatRatio } from "@/lib/format";
 import { requireUser } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
@@ -30,12 +32,20 @@ function toneOf(value: number): "positive" | "negative" | undefined {
 
 export default async function DashboardPage() {
   const { supabase, user } = await requireUser();
-  const [dropship, spy, trading, warChest] = await Promise.all([
+  const [dropship, spy, trading, warChest, vault] = await Promise.all([
     getDropshipData(supabase, user.id, 30),
     getSpyData(supabase, user.id, 8),
     getAllTradingStats(supabase, user.id),
     getWarChestSettings(supabase, user.id),
+    getVaultSettings(supabase, user.id),
   ]);
+  const taxVault = calculateTaxVault({
+    revenue: dropship.summary.revenue,
+    netProfit: dropship.summary.netProfit,
+    vatPercent: vault.vatPercent,
+    incomeTaxPercent: vault.incomeTaxPercent,
+    rollingReservePercent: vault.rollingReservePercent,
+  });
   const { summary, today, currency } = dropship;
   const totalBalance = trading.accounts.reduce((sum, a) => sum + a.balance, 0);
   const balanceCurrency = trading.accounts[0]?.currency ?? "USD";
@@ -112,6 +122,24 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Cofre fiscal — 30 dias</CardTitle>
+            <CardDescription>Dinheiro do Estado e reservas separados do que podes gastar.</CardDescription>
+          </div>
+          <Link href="/knowledge" className="text-xs text-muted-foreground hover:text-foreground">
+            Ajustar taxas <ArrowRight className="inline h-3 w-3" />
+          </Link>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Stat label="Reservado IVA" value={formatCurrency(taxVault.vatReserved, currency)} />
+          <Stat label="Reservado IRS/IRC" value={formatCurrency(taxVault.incomeTaxReserved, currency)} />
+          <Stat label="Reserva gateway" value={formatCurrency(taxVault.rollingReserve, currency)} />
+          <Stat label="Disponível para gastar" value={formatCurrency(taxVault.availableToSpend, currency)} tone={toneOf(taxVault.availableToSpend)} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

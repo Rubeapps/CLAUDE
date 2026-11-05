@@ -330,6 +330,81 @@ export type SpyAdCreativeInsert = {
   updated_at?: string | null;
 };
 
+export type BotStrategy = "WEBHOOK_SIGNAL" | "RSI_DCA" | "BREAKOUT";
+export type BotEventType = "SIGNAL_RECEIVED" | "ORDER_EXECUTED" | "CIRCUIT_BREAKER_BLOCKED" | "SIGNAL_REJECTED" | "ERROR";
+
+/** Valor JSON genérico (coluna JSONB). */
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
+export type TradingBotRow = {
+  id: string;
+  user_id: string;
+  account_id: string;
+  name: string;
+  symbol: string;
+  strategy_type: BotStrategy;
+  is_active: boolean;
+  is_testnet: boolean;
+  risk_per_trade_percent: number;
+  webhook_secret: string;
+  api_key_encrypted: string | null;
+  api_secret_encrypted: string | null;
+  created_at: string | null;
+};
+export type TradingBotInsert = {
+  id?: string;
+  user_id: string;
+  account_id: string;
+  name: string;
+  symbol: string;
+  strategy_type: BotStrategy;
+  is_active?: boolean;
+  is_testnet?: boolean;
+  risk_per_trade_percent?: number;
+  webhook_secret?: string;
+  api_key_encrypted?: string | null;
+  api_secret_encrypted?: string | null;
+  created_at?: string | null;
+};
+
+export type TradingBotLogRow = {
+  id: string;
+  bot_id: string;
+  event_type: string;
+  payload: Json | null;
+  message: string;
+  created_at: string | null;
+};
+export type TradingBotLogInsert = {
+  id?: string;
+  bot_id: string;
+  event_type: BotEventType;
+  payload?: Json | null;
+  message: string;
+  created_at?: string | null;
+};
+
+export type TreasuryTaxVaultRow = {
+  id: string;
+  user_id: string;
+  estimated_vat_percent: number;
+  estimated_income_tax_percent: number;
+  rolling_reserve_percent: number;
+  total_tax_reserved: number;
+  compliance_checklist: Json;
+  last_reconciliation_date: string | null;
+};
+export type TreasuryTaxVaultInsert = {
+  id?: string;
+  user_id: string;
+  estimated_vat_percent?: number;
+  estimated_income_tax_percent?: number;
+  rolling_reserve_percent?: number;
+  total_tax_reserved?: number;
+  compliance_checklist?: Json;
+  last_reconciliation_date?: string | null;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -345,6 +420,9 @@ export type Database = {
       war_chest_settings: TableDef<WarChestSettingsRow, WarChestSettingsInsert, Partial<WarChestSettingsInsert>>;
       dropship_ad_creatives: TableDef<DropshipAdCreativeRow, DropshipAdCreativeInsert, Partial<DropshipAdCreativeInsert>>;
       spy_ad_creatives: TableDef<SpyAdCreativeRow, SpyAdCreativeInsert, Partial<SpyAdCreativeInsert>>;
+      trading_bots: TableDef<TradingBotRow, TradingBotInsert, Partial<TradingBotInsert>>;
+      trading_bot_logs: TableDef<TradingBotLogRow, TradingBotLogInsert, Partial<TradingBotLogInsert>>;
+      treasury_tax_vault: TableDef<TreasuryTaxVaultRow, TreasuryTaxVaultInsert, Partial<TreasuryTaxVaultInsert>>;
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };

@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AccountsManager } from "@/components/trading/AccountsManager";
 import { EquityChart } from "@/components/trading/EquityChart";
 import { JournalTable } from "@/components/trading/JournalTable";
 import { TradingTerminal } from "@/components/trading/TradingTerminal";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { calculateMaxRiskAmount } from "@/lib/calculations/risk";
 import { getTradingData } from "@/lib/data/trading";
@@ -41,7 +43,15 @@ export default async function TradingPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Trading Terminal & Journal" description="Dimensiona cada posição pelo risco, regista e mede a tua performance." />
+      <PageHeader
+        title="Trading Terminal & Journal"
+        description="Dimensiona cada posição pelo risco, regista e mede a tua performance."
+        actions={
+          <Link href="/trading/bots" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Trading Bots
+          </Link>
+        }
+      />
 
       <AccountsManager accounts={data.accounts} selectedId={selectedAccount?.id ?? null} />
 

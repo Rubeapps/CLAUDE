@@ -1,6 +1,6 @@
 "use client";
 
-import { CandlestickChart, LayoutDashboard, LogOut, Megaphone, Menu, Radar, ShoppingCart, X } from "lucide-react";
+import { BookOpen, Bot, CandlestickChart, LayoutDashboard, LogOut, Megaphone, Menu, Radar, ShoppingCart, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -12,6 +12,8 @@ const NAV = [
   { href: "/spy", label: "Spy Engine", icon: Radar },
   { href: "/spy/ads", label: "Anúncios Meta", icon: Megaphone },
   { href: "/trading", label: "Trading", icon: CandlestickChart },
+  { href: "/trading/bots", label: "Trading Bots", icon: Bot },
+  { href: "/knowledge", label: "Playbook", icon: BookOpen },
 ] as const;
 
 export function Sidebar({ email }: { email: string }) {
