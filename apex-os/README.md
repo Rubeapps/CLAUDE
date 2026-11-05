@@ -12,7 +12,7 @@ Tudo corre em camadas gratuitas: Vercel/qualquer host Node, Supabase Free, GitHu
 
 ## Arranque
 
-1. **Supabase**: cria um projeto, abre *SQL Editor* e executa `supabase/schema.sql` , depois `supabase/migrations/002_control_features.sql` e `supabase/migrations/003_rls_performance.sql`.
+1. **Supabase**: cria um projeto, abre *SQL Editor* e executa `supabase/schema.sql` , depois `supabase/migrations/002_control_features.sql` , `supabase/migrations/003_rls_performance.sql` e `supabase/migrations/004_shipping_tiers.sql`.
    Em *Authentication → URL Configuration* adiciona `<SITE_URL>/auth/callback` aos redirect URLs.
 2. **Variáveis**: `cp .env.example .env.local` e preenche.
 3. **Correr**:
@@ -27,7 +27,7 @@ Tudo corre em camadas gratuitas: Vercel/qualquer host Node, Supabase Free, GitHu
 1. Em `/dropship` → *Ligação Shopify*, liga o domínio `loja.myshopify.com`.
 2. No Shopify: *Settings → Notifications → Webhooks*, cria webhooks JSON para *Order creation*, *Order update* e *Order cancellation* apontados a `<SITE_URL>/api/webhooks/shopify`.
 3. Copia a chave de assinatura para `SHOPIFY_WEBHOOK_SECRET`.
-4. Regista os custos por SKU em `/dropship` (o webhook cruza `line_items[].sku`).
+4. Regista os custos em `/dropship` → *Custos por produto*: COGS por unidade e portes totais para 1, 2 e 3 unidades do mesmo produto (as variantes contam juntas; acima de 3 soma-se o incremento 3−2). O webhook cruza `line_items[].sku`.
 
 Taxas por gateway em `lib/calculations/unit-economics.ts` (`GATEWAY_FEE_RULES`; por omissão 1.5% + 0.25). Encomendas `refunded`/`voided` ficam fora do P&L.
 

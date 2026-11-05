@@ -73,7 +73,33 @@ export function calculateOrderProfit({ salePrice, cogs, shipping, gatewayFee }: 
 
 export interface ProductCost {
   cogs: number;
+  /** Portes totais para 1 unidade do produto. */
   shipping_cost: number;
+  /** Portes totais para 2 unidades (null ⇒ 2 × shipping_cost). */
+  shipping_cost_2?: number | null;
+  /** Portes totais para 3 unidades (null ⇒ extrapolado do escalão anterior). */
+  shipping_cost_3?: number | null;
+  /** Produto a que o SKU pertence: as variantes do mesmo produto somam unidades para o escalão de portes. */
+  product?: string | null;
+}
+
+/**
+ * Portes por escalão de quantidade do mesmo produto:
+ *  1 un. → shipping_cost · 2 un. → shipping_cost_2 · 3 un. → shipping_cost_3
+ * Escalões em falta são extrapolados (linear a partir do anterior).
+ * Acima de 3, cada unidade extra soma o incremento do último escalão (3 − 2).
+ */
+export function calculateTieredShipping(quantity: number, tiers: Pick<ProductCost, "shipping_cost" | "shipping_cost_2" | "shipping_cost_3">): number {
+  const q = Math.max(0, Math.trunc(quantity));
+  if (q === 0) return 0;
+  const s1 = Math.max(0, tiers.shipping_cost);
+  const s2 = tiers.shipping_cost_2 ?? s1 * 2;
+  const s3 = tiers.shipping_cost_3 ?? s2 + (s2 - s1);
+  if (q === 1) return round2(s1);
+  if (q === 2) return round2(s2);
+  if (q === 3) return round2(s3);
+  const extraPerUnit = Math.max(0, s3 - s2);
+  return round2(s3 + (q - 3) * extraPerUnit);
 }
 
 export interface OrderLineItem {
@@ -92,7 +118,9 @@ export interface OrderEconomics {
 
 /**
  * Calcula os custos de uma encomenda a partir das linhas e do catálogo de custos por SKU.
- * Portes = shipping_cost do produto × quantidade.
+ * COGS = cogs × quantidade (por linha).
+ * Portes = escalão de portes do produto aplicado ao total de unidades desse produto na encomenda
+ * (todas as variantes do mesmo produto contam juntas).
  */
 export function computeOrderEconomics(params: {
   salePrice: number;
@@ -102,8 +130,8 @@ export function computeOrderEconomics(params: {
   feeOverride?: GatewayFeeRule;
 }): OrderEconomics {
   let totalCogs = 0;
-  let totalShipping = 0;
   const unmatched = new Set<string>();
+  const unitsByProduct = new Map<string, { units: number; tiers: ProductCost }>();
 
   for (const item of params.lineItems) {
     const quantity = Math.max(0, Math.trunc(item.quantity));
@@ -114,8 +142,14 @@ export function computeOrderEconomics(params: {
       continue;
     }
     totalCogs += cost.cogs * quantity;
-    totalShipping += cost.shipping_cost * quantity;
+    const key = cost.product?.trim() || `sku:${sku}`;
+    const group = unitsByProduct.get(key);
+    if (group) group.units += quantity;
+    else unitsByProduct.set(key, { units: quantity, tiers: cost });
   }
+
+  let totalShipping = 0;
+  for (const { units, tiers } of unitsByProduct.values()) totalShipping += calculateTieredShipping(units, tiers);
 
   const gatewayFee = calculateGatewayFee(params.salePrice, resolveGatewayFeeRule(params.gateway, params.feeOverride));
   totalCogs = round2(totalCogs);

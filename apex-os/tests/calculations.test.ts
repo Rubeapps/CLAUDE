@@ -155,3 +155,27 @@ test("parser CSV Meta Ads (EN com aspas e PT com ;)", async () => {
   assert.equal(parseLocaleNumber("€ 3,20"), 3.2);
   assert.equal(parseMetaAdsCsv("foo,bar\n1,2").missingRequired.length, 4);
 });
+
+test("portes por escalão e soma de variantes do mesmo produto", async () => {
+  const { calculateTieredShipping, computeOrderEconomics } = await import("../lib/calculations/unit-economics.ts");
+  const tiers = { shipping_cost: 4, shipping_cost_2: 6, shipping_cost_3: 7.5 };
+  assert.equal(calculateTieredShipping(1, tiers), 4);
+  assert.equal(calculateTieredShipping(2, tiers), 6);
+  assert.equal(calculateTieredShipping(3, tiers), 7.5);
+  assert.equal(calculateTieredShipping(5, tiers), 10.5);
+  assert.equal(calculateTieredShipping(3, { shipping_cost: 3, shipping_cost_2: null, shipping_cost_3: null }), 9);
+  const costs = new Map([
+    ["T-LIGHT", { cogs: 5, ...tiers, product: "Tights" }],
+    ["T-TAN", { cogs: 5, ...tiers, product: "Tights" }],
+    ["SOCKS", { cogs: 2, shipping_cost: 3, shipping_cost_2: null, shipping_cost_3: null, product: "Socks" }],
+  ]);
+  const r = computeOrderEconomics({
+    salePrice: 77,
+    gateway: "manual",
+    lineItems: [{ sku: "T-LIGHT", quantity: 1 }, { sku: "T-TAN", quantity: 1 }, { sku: "SOCKS", quantity: 1 }],
+    costsBySku: costs,
+  });
+  assert.equal(r.totalCogs, 12);
+  assert.equal(r.totalShipping, 9);
+  assert.equal(r.netProfit, 56);
+});

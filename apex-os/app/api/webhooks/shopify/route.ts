@@ -83,12 +83,18 @@ export async function POST(request: NextRequest) {
     if (skus.length > 0) {
       const { data: products, error: productsError } = await supabase
         .from("dropship_products")
-        .select("sku, cogs, shipping_cost")
+        .select("sku, name, cogs, shipping_cost, shipping_cost_2, shipping_cost_3")
         .eq("user_id", userId)
         .in("sku", skus);
       if (productsError) return jsonError(500, "database_error", productsError.message);
       for (const product of products) {
-        costsBySku.set(product.sku, { cogs: Number(product.cogs), shipping_cost: Number(product.shipping_cost) });
+        costsBySku.set(product.sku, {
+          cogs: Number(product.cogs),
+          shipping_cost: Number(product.shipping_cost),
+          shipping_cost_2: product.shipping_cost_2 === null ? null : Number(product.shipping_cost_2),
+          shipping_cost_3: product.shipping_cost_3 === null ? null : Number(product.shipping_cost_3),
+          product: product.name,
+        });
       }
     }
 

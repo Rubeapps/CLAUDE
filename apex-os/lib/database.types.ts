@@ -23,6 +23,8 @@ export type DropshipProductRow = {
   name: string;
   cogs: number;
   shipping_cost: number;
+  shipping_cost_2: number | null;
+  shipping_cost_3: number | null;
   created_at: string | null;
 };
 export type DropshipProductInsert = {
@@ -32,6 +34,8 @@ export type DropshipProductInsert = {
   name: string;
   cogs?: number;
   shipping_cost?: number;
+  shipping_cost_2?: number | null;
+  shipping_cost_3?: number | null;
   created_at?: string | null;
 };
 

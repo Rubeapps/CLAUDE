@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { AdFatigueRadar } from "@/components/dropship/AdFatigueRadar";
 import { AdSpendManager } from "@/components/dropship/AdSpendManager";
 import { MetricsCards } from "@/components/dropship/MetricsCards";
+import { ProductCostsTable } from "@/components/dropship/ProductCostsTable";
 import { ProductsManager } from "@/components/dropship/ProductsManager";
 import { ProfitChart } from "@/components/dropship/ProfitChart";
 import { StoreConnect } from "@/components/dropship/StoreConnect";
@@ -161,11 +162,20 @@ export default async function DropshipPage({ searchParams }: { searchParams: Pro
       <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Custos por SKU</CardTitle>
-            <CardDescription>O webhook cruza o SKU de cada linha com esta tabela para calcular COGS e portes.</CardDescription>
+            <CardTitle>Custos por produto</CardTitle>
+            <CardDescription>
+              Atualiza aqui o COGS e os portes sempre que mudarem: o valor aplica-se a todas as variantes do produto. Encomendas novas usam o custo atual; as antigas mantêm o custo
+              da altura.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <ProductsManager products={data.products} currency={currency} />
+          <CardContent className="space-y-4">
+            <ProductCostsTable products={data.products} currency={currency} />
+            <details className="rounded-md border p-3">
+              <summary className="cursor-pointer text-sm font-medium">Avançado: custos por SKU ({data.products.length})</summary>
+              <div className="pt-4">
+                <ProductsManager products={data.products} currency={currency} />
+              </div>
+            </details>
           </CardContent>
         </Card>
         <Card>
