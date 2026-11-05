@@ -1,0 +1,61 @@
+# Apex OS — Shopify Spy Engine runner (GitHub Actions, free tier).
+# Secrets necessários (Settings → Secrets and variables → Actions):
+#   APEX_BASE_URL  → URL público da app (ex.: https://apex-os.vercel.app), sem barra final
+#   CRON_SECRET    → o mesmo valor de CRON_SECRET no servidor
+name: Spy Engine Cron
+
+on:
+  schedule:
+    # De 30 em 30 minutos (UTC). O GitHub pode atrasar execuções em horas de pico.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      target_id:
+        description: "UUID de uma loja específica (vazio = todas as ativas)"
+        required: false
+        default: ""
+      summary:
+        description: "Enviar resumo para o Telegram"
+        type: boolean
+        default: false
+
+concurrency:
+  group: spy-cron
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run-spy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Invoke /api/cron/spy-runner
+        env:
+          APEX_BASE_URL: ${{ secrets.APEX_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          TARGET_ID: ${{ github.event.inputs.target_id }}
+          SUMMARY: ${{ github.event.inputs.summary }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APEX_BASE_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::Define os secrets APEX_BASE_URL e CRON_SECRET no repositório."
+            exit 1
+          fi
+          QUERY="summary=${SUMMARY:-false}"
+          if [ -n "${TARGET_ID:-}" ]; then QUERY="${QUERY}&target_id=${TARGET_ID}"; fi
+
+          HTTP_CODE=$(curl -sS -o response.json -w "%{http_code}" \
+            --retry 3 --retry-delay 10 --retry-all-errors --max-time 120 \
+            -X POST "${APEX_BASE_URL%/}/api/cron/spy-runner?${QUERY}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json")
+
+          echo "HTTP ${HTTP_CODE}"
+          jq '{ok, targets, totals, errors: [.results[]? | select(.ok == false) | {storeName, error}]}' response.json || cat response.json
+
+          if [ "${HTTP_CODE}" -ge 400 ]; then
+            echo "::error::spy-runner devolveu HTTP ${HTTP_CODE}"
+            exit 1
+          fi
