@@ -52,6 +52,7 @@ export type DropshipOrderRow = {
   total_shipping: number;
   net_profit: number;
   status_financial: string;
+  shipping_country: string | null;
   created_at: string | null;
 };
 export type DropshipOrderInsert = {
@@ -67,6 +68,7 @@ export type DropshipOrderInsert = {
   total_shipping?: number;
   net_profit?: number;
   status_financial: string;
+  shipping_country?: string | null;
   created_at?: string | null;
 };
 
@@ -405,6 +407,59 @@ export type TreasuryTaxVaultInsert = {
   last_reconciliation_date?: string | null;
 };
 
+export type ShippingCountryRow = {
+  id: string;
+  user_id: string;
+  country_code: string;
+  name: string;
+  created_at: string | null;
+};
+export type ShippingCountryInsert = {
+  id?: string;
+  user_id: string;
+  country_code: string;
+  name: string;
+  created_at?: string | null;
+};
+
+export type ShippingRateRow = {
+  id: string;
+  user_id: string;
+  product_name: string;
+  country_code: string;
+  shipping_1: number;
+  shipping_2: number | null;
+  shipping_3: number | null;
+  updated_at: string | null;
+};
+export type ShippingRateInsert = {
+  id?: string;
+  user_id: string;
+  product_name: string;
+  country_code: string;
+  shipping_1: number;
+  shipping_2?: number | null;
+  shipping_3?: number | null;
+  updated_at?: string | null;
+};
+
+export type ProductIdeaRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  inputs: Json;
+  created_at: string | null;
+  updated_at: string | null;
+};
+export type ProductIdeaInsert = {
+  id?: string;
+  user_id: string;
+  name: string;
+  inputs?: Json;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -423,6 +478,9 @@ export type Database = {
       trading_bots: TableDef<TradingBotRow, TradingBotInsert, Partial<TradingBotInsert>>;
       trading_bot_logs: TableDef<TradingBotLogRow, TradingBotLogInsert, Partial<TradingBotLogInsert>>;
       treasury_tax_vault: TableDef<TreasuryTaxVaultRow, TreasuryTaxVaultInsert, Partial<TreasuryTaxVaultInsert>>;
+      dropship_shipping_countries: TableDef<ShippingCountryRow, ShippingCountryInsert, Partial<ShippingCountryInsert>>;
+      dropship_shipping_rates: TableDef<ShippingRateRow, ShippingRateInsert, Partial<ShippingRateInsert>>;
+      dropship_product_ideas: TableDef<ProductIdeaRow, ProductIdeaInsert, Partial<ProductIdeaInsert>>;
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };

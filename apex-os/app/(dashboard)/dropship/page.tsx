@@ -3,7 +3,9 @@ import type { Metadata } from "next";
 import { AdFatigueRadar } from "@/components/dropship/AdFatigueRadar";
 import { AdSpendManager } from "@/components/dropship/AdSpendManager";
 import { MetricsCards } from "@/components/dropship/MetricsCards";
+import { ProductCalculator } from "@/components/dropship/ProductCalculator";
 import { ProductCostsTable } from "@/components/dropship/ProductCostsTable";
+import { ShippingCountriesManager } from "@/components/dropship/ShippingCountries";
 import { ProductsManager } from "@/components/dropship/ProductsManager";
 import { ProfitChart } from "@/components/dropship/ProfitChart";
 import { ScenarioSimulator } from "@/components/dropship/ScenarioSimulator";
@@ -15,7 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { NON_REVENUE_FINANCIAL_STATUSES } from "@/lib/calculations/unit-economics";
-import { getDropshipData, getLatestAdCreatives, parseRange, RANGE_OPTIONS } from "@/lib/data/dropship";
+import { getDropshipData, getLatestAdCreatives, getProductIdeas, getShippingConfig, parseRange, RANGE_OPTIONS } from "@/lib/data/dropship";
 import { formatCurrency, formatDateTime, formatPercent, formatRatio, formatShortDate } from "@/lib/format";
 import { getSiteUrl } from "@/lib/site-url";
 import { requireUser } from "@/lib/supabase/server";
@@ -27,7 +29,13 @@ export default async function DropshipPage({ searchParams }: { searchParams: Pro
   const { range } = await searchParams;
   const rangeDays = parseRange(range);
   const { supabase, user } = await requireUser();
-  const [data, siteUrl, creatives] = await Promise.all([getDropshipData(supabase, user.id, rangeDays), getSiteUrl(), getLatestAdCreatives(supabase, user.id)]);
+  const [data, siteUrl, creatives, shipping, ideas] = await Promise.all([
+    getDropshipData(supabase, user.id, rangeDays),
+    getSiteUrl(),
+    getLatestAdCreatives(supabase, user.id),
+    getShippingConfig(supabase, user.id),
+    getProductIdeas(supabase, user.id),
+  ]);
   const { currency } = data;
   const dailyDesc = [...data.daily].reverse();
 
@@ -48,6 +56,19 @@ export default async function DropshipPage({ searchParams }: { searchParams: Pro
         </CardHeader>
         <CardContent>
           <ProfitChart daily={data.daily} currency={currency} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Calculadora de produto</CardTitle>
+          <CardDescription>
+            Para qualquer produto, mesmo que ainda não esteja na loja: quanto ganhas, quanto podes pagar em anúncios, a que preço vender e quanto podes pagar ao fornecedor, por país e por
+            1/2/3 unidades.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ProductCalculator ideas={ideas} countries={shipping.countries} currency={currency} />
         </CardContent>
       </Card>
 
@@ -189,7 +210,8 @@ export default async function DropshipPage({ searchParams }: { searchParams: Pro
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <ProductCostsTable products={data.products} currency={currency} />
+            <ShippingCountriesManager countries={shipping.countries} />
+            <ProductCostsTable products={data.products} currency={currency} shipping={shipping} />
             <details className="rounded-md border p-3">
               <summary className="cursor-pointer text-sm font-medium">Avançado: custos por SKU ({data.products.length})</summary>
               <div className="pt-4">

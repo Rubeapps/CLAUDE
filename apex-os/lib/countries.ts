@@ -1,0 +1,43 @@
+/** Países para portes (ISO 3166-1 alfa-2, nomes em português). */
+export const COUNTRY_CATALOG: readonly { code: string; name: string }[] = [
+  { code: "PT", name: "Portugal" },
+  { code: "ES", name: "Espanha" },
+  { code: "FR", name: "França" },
+  { code: "DE", name: "Alemanha" },
+  { code: "IT", name: "Itália" },
+  { code: "NL", name: "Países Baixos" },
+  { code: "BE", name: "Bélgica" },
+  { code: "LU", name: "Luxemburgo" },
+  { code: "IE", name: "Irlanda" },
+  { code: "AT", name: "Áustria" },
+  { code: "DK", name: "Dinamarca" },
+  { code: "SE", name: "Suécia" },
+  { code: "FI", name: "Finlândia" },
+  { code: "PL", name: "Polónia" },
+  { code: "CZ", name: "Chéquia" },
+  { code: "SK", name: "Eslováquia" },
+  { code: "SI", name: "Eslovénia" },
+  { code: "HU", name: "Hungria" },
+  { code: "RO", name: "Roménia" },
+  { code: "BG", name: "Bulgária" },
+  { code: "HR", name: "Croácia" },
+  { code: "GR", name: "Grécia" },
+  { code: "CY", name: "Chipre" },
+  { code: "MT", name: "Malta" },
+  { code: "EE", name: "Estónia" },
+  { code: "LV", name: "Letónia" },
+  { code: "LT", name: "Lituânia" },
+  { code: "GB", name: "Reino Unido" },
+  { code: "CH", name: "Suíça" },
+  { code: "NO", name: "Noruega" },
+  { code: "IS", name: "Islândia" },
+  { code: "US", name: "Estados Unidos" },
+  { code: "CA", name: "Canadá" },
+  { code: "BR", name: "Brasil" },
+  { code: "AU", name: "Austrália" },
+  { code: "AE", name: "Emirados Árabes Unidos" },
+];
+
+export function countryName(code: string): string {
+  return COUNTRY_CATALOG.find((c) => c.code === code)?.name ?? code;
+}
