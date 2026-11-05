@@ -312,3 +312,14 @@ test("bookmarklet gera JavaScript válido e o JSON é validado", async () => {
   assert.equal(parseLibraryPayload("isto não é json").ok, false);
   assert.equal(fallbackPageId("Loja Ção X"), "pagina:loja-cao-x");
 });
+
+test("importador reconhece Page ID colado por engano e dá erros em português", async () => {
+  const { detectPageIdInput, parseLibraryPayload, adLibraryPageUrl } = await import("../lib/spy/ad-library-import.ts");
+  assert.equal(detectPageIdInput("1612120573929756"), "1612120573929756");
+  assert.equal(detectPageIdInput("https://www.facebook.com/ads/library/?view_all_page_id=1612120573929756"), "1612120573929756");
+  assert.equal(detectPageIdInput('{"v":1}'), null);
+  const r = parseLibraryPayload("1612120573929756");
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.error, /Enviar para o Apex/);
+  assert.match(adLibraryPageUrl("123456"), /view_all_page_id=123456/);
+});

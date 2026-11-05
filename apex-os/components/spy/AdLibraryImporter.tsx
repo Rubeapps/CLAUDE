@@ -1,6 +1,6 @@
 "use client";
 
-import { Bookmark, Check, ClipboardPaste, Copy, MousePointerClick, Upload } from "lucide-react";
+import { Bookmark, Check, ClipboardPaste, Copy, ExternalLink, MousePointerClick, Upload } from "lucide-react";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { importLibraryAds } from "@/app/(dashboard)/spy/ads/actions";
 import { Button } from "@/components/ui/button";
@@ -9,11 +9,11 @@ import { Select, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { idleState } from "@/lib/action-state";
 import type { AdTargetOption } from "@/lib/data/spy-ads";
-import { parseLibraryPayload } from "@/lib/spy/ad-library-import";
+import { adLibraryPageUrl, detectPageIdInput, parseLibraryPayload } from "@/lib/spy/ad-library-import";
 import { bookmarkletSource, buildBookmarklet } from "@/lib/spy/bookmarklet";
 import { cn } from "@/lib/utils";
 
-type Preview = { kind: "empty" } | { kind: "ok"; cards: number; url: string } | { kind: "error"; message: string };
+type Preview = { kind: "empty" } | { kind: "ok"; cards: number; url: string } | { kind: "pageId"; pageId: string } | { kind: "error"; message: string };
 
 /**
  * Importação sem token: o botão "Enviar para o Apex" (bookmarklet) copia os anúncios visíveis
@@ -40,6 +40,8 @@ export function AdLibraryImporter({ targets, autoOpen }: { targets: AdTargetOpti
 
   const preview: Preview = (() => {
     if (payload.trim() === "") return { kind: "empty" };
+    const pageId = detectPageIdInput(payload);
+    if (pageId) return { kind: "pageId", pageId };
     const r = parseLibraryPayload(payload);
     return r.ok ? { kind: "ok", cards: r.payload.cards.length, url: r.payload.url } : { kind: "error", message: r.error };
   })();
@@ -148,6 +150,21 @@ export function AdLibraryImporter({ targets, autoOpen }: { targets: AdTargetOpti
               {preview.cards} anúncios prontos a importar
               {preview.url.includes("view_all_page_id") ? " (com Page ID)" : " · sem Page ID no URL: escolhe uma loja ou fica agrupado pelo nome da página"}.
             </p>
+          ) : preview.kind === "pageId" ? (
+            <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3 text-xs">
+              <p>
+                Isto é o <strong>Page ID {preview.pageId}</strong>, não o conteúdo do botão. Abre a Ad Library dessa página, faz scroll, carrega no favorito{" "}
+                <strong>&quot;Enviar para o Apex&quot;</strong> e cola aqui o que ele copiar.
+              </p>
+              <a
+                href={adLibraryPageUrl(preview.pageId)}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 font-semibold text-primary-foreground"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Abrir anúncios desta página na Ad Library
+              </a>
+            </div>
           ) : preview.kind === "error" ? (
             <p className="text-xs text-destructive">{preview.message}</p>
           ) : null}
