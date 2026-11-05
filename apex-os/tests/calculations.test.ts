@@ -242,3 +242,19 @@ test("assinatura HMAC da Binance (exemplo da documentação)", async () => {
   assert.equal(floorToStep(1.9999, 0.01), 1.99);
   assert.equal(toBinanceDecimal(0.0000001), "0.0000001");
 });
+
+test("Academia: 14 áreas, 3 níveis cada, conteúdo completo e chaves válidas", async () => {
+  const { ACADEMY, masteryKey } = await import("../lib/knowledge/academy.ts");
+  assert.equal(ACADEMY.length, 14);
+  const ids = new Set<string>();
+  for (const area of ACADEMY) {
+    assert.ok(!ids.has(area.id), `id repetido: ${area.id}`);
+    ids.add(area.id);
+    assert.deepEqual(area.levels.map((l) => l.id), ["amador", "pro", "goat"]);
+    for (const level of area.levels) {
+      assert.ok(level.principles.length >= 3, `${area.id}/${level.id}: poucos princípios`);
+      assert.ok(level.actions.length >= 1 && level.metrics.length >= 1 && level.sources.length >= 1, `${area.id}/${level.id}: secção vazia`);
+      assert.match(masteryKey(area.id, level.id), /^[a-z_]{2,40}$/);
+    }
+  }
+});

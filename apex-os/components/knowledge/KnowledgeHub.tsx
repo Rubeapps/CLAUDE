@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BookOpen, Brain, Calculator, CheckCircle2, Gauge, Landmark, Scale, ShieldCheck, Workflow } from "lucide-react";
+import { AlertTriangle, BookOpen, Brain, Calculator, CheckCircle2, Gauge, GraduationCap, Landmark, Scale, ShieldCheck, Workflow } from "lucide-react";
 import { useActionState, useState, useTransition, type ReactNode } from "react";
 import { reconcileVault, saveVaultSettings, setChecklistItem } from "@/app/(dashboard)/knowledge/actions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { idleState } from "@/lib/action-state";
 import { calculateCashCycle, calculatePnlCascade, calculateTaxVault } from "@/lib/calculations/treasury";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Academy } from "./Academy";
 
 export interface HubMetrics {
   currency: string;
@@ -34,7 +35,7 @@ export interface HubVault {
   lastReconciliation: string | null;
 }
 
-type Tab = "governance" | "ecommerce";
+type Tab = "academy" | "governance" | "ecommerce";
 
 function num(value: string, fallback = 0): number {
   const n = Number.parseFloat(value.replace(",", "."));
@@ -488,8 +489,9 @@ function EcommerceTab({ metrics, vault, checklist }: { metrics: HubMetrics; vaul
 }
 
 export function KnowledgeHub({ metrics, vault, checklist }: { metrics: HubMetrics; vault: HubVault; checklist: Record<string, boolean> }) {
-  const [tab, setTab] = useState<Tab>("governance");
+  const [tab, setTab] = useState<Tab>("academy");
   const tabs: { id: Tab; label: string; icon: typeof BookOpen }[] = [
+    { id: "academy", label: "Academia: Amador → Pro → GOAT", icon: GraduationCap },
     { id: "governance", label: "Governança & modelos mentais", icon: Brain },
     { id: "ecommerce", label: "Contabilidade & e-commerce", icon: CheckCircle2 },
   ];
@@ -509,7 +511,13 @@ export function KnowledgeHub({ metrics, vault, checklist }: { metrics: HubMetric
           </button>
         ))}
       </div>
-      {tab === "governance" ? <GovernanceTab metrics={metrics} /> : <EcommerceTab metrics={metrics} vault={vault} checklist={checklist} />}
+      {tab === "academy" ? (
+        <Academy initialMastery={checklist} />
+      ) : tab === "governance" ? (
+        <GovernanceTab metrics={metrics} />
+      ) : (
+        <EcommerceTab metrics={metrics} vault={vault} checklist={checklist} />
+      )}
     </div>
   );
 }
