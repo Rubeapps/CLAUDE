@@ -12,7 +12,7 @@ Tudo corre em camadas gratuitas: Vercel/qualquer host Node, Supabase Free, GitHu
 
 ## Arranque
 
-1. **Supabase**: cria um projeto, abre *SQL Editor* e executa `supabase/schema.sql` , depois `supabase/migrations/002_control_features.sql` , `supabase/migrations/003_rls_performance.sql` `supabase/migrations/004_shipping_tiers.sql` `supabase/migrations/005_spy_ad_creatives.sql` `supabase/migrations/006_trading_bots_treasury.sql` e `supabase/migrations/007_trading_precision.sql`.
+1. **Supabase**: cria um projeto, abre *SQL Editor* e executa `supabase/schema.sql` , depois `supabase/migrations/002_control_features.sql` , `supabase/migrations/003_rls_performance.sql` `supabase/migrations/004_shipping_tiers.sql` `supabase/migrations/005_spy_ad_creatives.sql` `supabase/migrations/006_trading_bots_treasury.sql` `supabase/migrations/007_trading_precision.sql`, `008_shipping_by_country.sql` e `009_product_ideas.sql`.
    Em *Authentication → URL Configuration* adiciona `<SITE_URL>/auth/callback` aos redirect URLs.
 2. **Variáveis**: `cp .env.example .env.local` e preenche.
 3. **Correr**:
@@ -28,6 +28,10 @@ Tudo corre em camadas gratuitas: Vercel/qualquer host Node, Supabase Free, GitHu
 2. No Shopify: *Settings → Notifications → Webhooks*, cria webhooks JSON para *Order creation*, *Order update* e *Order cancellation* apontados a `<SITE_URL>/api/webhooks/shopify`.
 3. Copia a chave de assinatura para `SHOPIFY_WEBHOOK_SECRET`.
 4. Regista os custos em `/dropship` → *Custos por produto*: COGS por unidade e portes totais para 1, 2 e 3 unidades do mesmo produto (as variantes contam juntas; acima de 3 soma-se o incremento 3−2). O webhook cruza `line_items[].sku`.
+
+**Portes por país:** cada produto tem portes padrão (1/2/3 un.) e, opcionalmente, portes próprios por país de entrega (lista de países editável em *Custos por produto*). O webhook usa o `shipping_address.country_code` da encomenda; país sem valor próprio usa o padrão.
+
+**Calculadora de produto:** em `/dropship`, para qualquer produto (mesmo fora da loja) calcula lucro, CPA máximo, break-even ROAS, preço recomendado para a margem desejada e custo máximo ao fornecedor, por país e por 1/2/3 unidades. Os produtos ficam guardados.
 
 Taxas por gateway em `lib/calculations/unit-economics.ts` (`GATEWAY_FEE_RULES`; por omissão 1.5% + 0.25). Encomendas `refunded`/`voided` ficam fora do P&L.
 

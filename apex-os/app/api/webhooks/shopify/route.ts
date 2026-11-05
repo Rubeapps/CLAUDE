@@ -78,6 +78,8 @@ export async function POST(request: NextRequest) {
     }
     const userId = store.user_id;
 
+    const country = order.shipping_address?.country_code?.trim().toUpperCase() ?? null;
+    const shippingCountry = country && /^[A-Z]{2}$/.test(country) ? country : null;
     const skus = [...new Set(order.line_items.map((li) => li.sku?.trim()).filter((sku): sku is string => Boolean(sku)))];
     const costsBySku = new Map<string, ProductCost>();
     if (skus.length > 0) {
@@ -87,7 +89,29 @@ export async function POST(request: NextRequest) {
         .eq("user_id", userId)
         .in("sku", skus);
       if (productsError) return jsonError(500, "database_error", productsError.message);
+
+      // Portes do país de entrega (se configurados) substituem os portes por defeito do produto.
+      const countryRates = new Map<string, { s1: number; s2: number | null; s3: number | null }>();
+      if (shippingCountry) {
+        const names = [...new Set(products.map((p) => p.name))];
+        const { data: rates, error: ratesError } = await supabase
+          .from("dropship_shipping_rates")
+          .select("product_name, shipping_1, shipping_2, shipping_3")
+          .eq("user_id", userId)
+          .eq("country_code", shippingCountry)
+          .in("product_name", names);
+        if (ratesError) return jsonError(500, "database_error", ratesError.message);
+        for (const r of rates) {
+          countryRates.set(r.product_name, { s1: Number(r.shipping_1), s2: r.shipping_2 === null ? null : Number(r.shipping_2), s3: r.shipping_3 === null ? null : Number(r.shipping_3) });
+        }
+      }
+
       for (const product of products) {
+        const rate = countryRates.get(product.name);
+        if (rate) {
+          costsBySku.set(product.sku, { cogs: Number(product.cogs), shipping_cost: rate.s1, shipping_cost_2: rate.s2, shipping_cost_3: rate.s3, product: product.name });
+          continue;
+        }
         costsBySku.set(product.sku, {
           cogs: Number(product.cogs),
           shipping_cost: Number(product.shipping_cost),
@@ -131,6 +155,7 @@ export async function POST(request: NextRequest) {
         total_shipping: economics.totalShipping,
         net_profit: economics.netProfit,
         status_financial: financialStatus,
+        shipping_country: shippingCountry,
         created_at: order.created_at,
       },
       { onConflict: "user_id,shopify_order_id" },

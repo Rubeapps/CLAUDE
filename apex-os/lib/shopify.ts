@@ -40,6 +40,7 @@ export const shopifyOrderWebhookSchema = z.object({
   payment_gateway_names: z.array(z.string()).nullish(),
   financial_status: z.string().nullish(),
   created_at: z.string(),
+  shipping_address: z.object({ country_code: z.string().nullish() }).nullish(),
   line_items: z.array(
     z.object({
       sku: z.string().nullish(),

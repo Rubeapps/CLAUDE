@@ -3,6 +3,7 @@ import "server-only";
 import { aggregateDailyPnl, summarizePnl, toDateKey, type DailyPnl, type PnlSummary } from "@/lib/calculations/unit-economics";
 import type { DropshipAdCreativeRow, DropshipAdSpendRow, DropshipOrderRow, DropshipProductRow, DropshipStoreRow } from "@/lib/database.types";
 import { getAppTimeZone } from "@/lib/format";
+import { ideaInputsFromJson, type ProductIdeaInputs } from "@/lib/product-ideas";
 import type { TypedSupabaseClient } from "@/lib/supabase/server";
 
 export const RANGE_OPTIONS = [7, 30, 90] as const;
@@ -105,4 +106,43 @@ export async function getDropshipData(supabase: TypedSupabaseClient, userId: str
     adSpend: adSpend.slice(0, 60),
     stores: storesRes.data ?? [],
   };
+}
+
+export interface ShippingConfig {
+  countries: { code: string; name: string }[];
+  /** product_name → country_code → escalões. */
+  rates: Record<string, Record<string, { s1: number; s2: number | null; s3: number | null }>>;
+}
+
+/** Países configurados e portes por país de cada produto (filtrado por user_id + RLS). */
+export async function getShippingConfig(supabase: TypedSupabaseClient, userId: string): Promise<ShippingConfig> {
+  const [countriesRes, ratesRes] = await Promise.all([
+    supabase.from("dropship_shipping_countries").select("country_code, name").eq("user_id", userId).order("name", { ascending: true }),
+    supabase.from("dropship_shipping_rates").select("product_name, country_code, shipping_1, shipping_2, shipping_3").eq("user_id", userId),
+  ]);
+  if (countriesRes.error) throw new Error(countriesRes.error.message);
+  if (ratesRes.error) throw new Error(ratesRes.error.message);
+  const rates: ShippingConfig["rates"] = {};
+  for (const r of ratesRes.data) {
+    const byCountry = (rates[r.product_name] ??= {});
+    byCountry[r.country_code] = {
+      s1: Number(r.shipping_1),
+      s2: r.shipping_2 === null ? null : Number(r.shipping_2),
+      s3: r.shipping_3 === null ? null : Number(r.shipping_3),
+    };
+  }
+  return { countries: countriesRes.data.map((c) => ({ code: c.country_code, name: c.name })), rates };
+}
+
+export interface ProductIdea {
+  id: string;
+  name: string;
+  inputs: ProductIdeaInputs;
+  updatedAt: string | null;
+}
+
+export async function getProductIdeas(supabase: TypedSupabaseClient, userId: string): Promise<ProductIdea[]> {
+  const { data, error } = await supabase.from("dropship_product_ideas").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(100);
+  if (error) throw new Error(error.message);
+  return data.map((d) => ({ id: d.id, name: d.name, inputs: ideaInputsFromJson(d.inputs), updatedAt: d.updated_at }));
 }

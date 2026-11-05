@@ -323,3 +323,22 @@ test("importador reconhece Page ID colado por engano e dá erros em português",
   if (!r.ok) assert.match(r.error, /Enviar para o Apex/);
   assert.match(adLibraryPageUrl("123456"), /view_all_page_id=123456/);
 });
+
+test("calculadora de produto: lucro, CPA máximo, preço recomendado e custo máximo", async () => {
+  const { calculateProduct } = await import("../lib/calculations/product-calc.ts");
+  const r = calculateProduct({ unitPrice: 31, unitCogs: 6, quantity: 2, shipping: 7, gatewayPercent: 1.5, gatewayFixed: 0.25, vatPercent: 0, cpa: 15, targetMarginPercent: 20 });
+  assert.equal(r.revenue, 62);
+  assert.equal(r.gatewayFee, 1.18);
+  assert.equal(r.maxCpa, 41.82);
+  assert.equal(r.profit, 26.82);
+  assert.equal(r.breakEvenRoas, 1.48);
+  // Preço recomendado dá exatamente a margem alvo.
+  const check = calculateProduct({ unitPrice: r.recommendedUnitPrice ?? 0, unitCogs: 6, quantity: 2, shipping: 7, gatewayPercent: 1.5, gatewayFixed: 0.25, vatPercent: 0, cpa: 15, targetMarginPercent: 20 });
+  assert.ok(Math.abs((check.marginPercent ?? 0) - 20) < 0.1);
+  // Com IVA 23% incluído no preço.
+  const vat = calculateProduct({ unitPrice: 12.3, unitCogs: 2, quantity: 1, shipping: 3, gatewayPercent: 0, gatewayFixed: 0, vatPercent: 23, cpa: 0, targetMarginPercent: 0 });
+  assert.equal(vat.vat, 2.3);
+  assert.equal(vat.maxCpa, 5);
+  assert.equal(vat.maxUnitCogs, 7);
+  assert.equal(calculateProduct({ unitPrice: 10, unitCogs: 1, quantity: 1, shipping: 1, gatewayPercent: 0, gatewayFixed: 0, vatPercent: 0, cpa: 0, targetMarginPercent: 95 }).recommendedUnitPrice !== null, true);
+});

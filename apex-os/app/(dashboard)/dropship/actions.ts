@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { actionError, actionSuccess, formNumber, formToObject, zodMessage, type ActionState } from "@/lib/action-state";
 import { calculateAdFatigue } from "@/lib/calculations/engine";
-import type { DropshipAdCreativeInsert } from "@/lib/database.types";
+import { COUNTRY_CATALOG } from "@/lib/countries";
+import type { DropshipAdCreativeInsert, Json } from "@/lib/database.types";
+import { productIdeaInputsSchema } from "@/lib/product-ideas";
 import { normalizeShopDomain } from "@/lib/shopify";
 import { requireUser } from "@/lib/supabase/server";
 
@@ -184,5 +186,129 @@ export async function disconnectStore(formData: FormData): Promise<void> {
   if (!parsed.success) return;
   const { supabase, user } = await requireUser();
   await supabase.from("dropship_stores").delete().eq("id", parsed.data.id).eq("user_id", user.id);
+  revalidate();
+}
+
+/* ─── Portes por país ─────────────────────────────────────────────────────── */
+
+const countrySchema = z.object({
+  country_code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{2}$/, "código de país com 2 letras (ex.: DE)"),
+  name: z.string().trim().max(60).optional(),
+});
+
+export async function addShippingCountry(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const parsed = countrySchema.safeParse(formToObject(formData));
+  if (!parsed.success) return actionError(zodMessage(parsed.error));
+  const code = parsed.data.country_code;
+  const name = parsed.data.name && parsed.data.name.length > 0 ? parsed.data.name : (COUNTRY_CATALOG.find((c) => c.code === code)?.name ?? code);
+  const { supabase, user } = await requireUser();
+  const { error } = await supabase.from("dropship_shipping_countries").insert({ user_id: user.id, country_code: code, name });
+  if (error) return actionError(error.code === "23505" ? `${name} já está na lista.` : error.message);
+  revalidate();
+  return actionSuccess(`${name} adicionado.`);
+}
+
+export async function removeShippingCountry(formData: FormData): Promise<void> {
+  const parsed = countrySchema.pick({ country_code: true }).safeParse(formToObject(formData));
+  if (!parsed.success) return;
+  const { supabase, user } = await requireUser();
+  await supabase.from("dropship_shipping_rates").delete().eq("user_id", user.id).eq("country_code", parsed.data.country_code);
+  await supabase.from("dropship_shipping_countries").delete().eq("user_id", user.id).eq("country_code", parsed.data.country_code);
+  revalidate();
+}
+
+function optionalMoney(raw: FormDataEntryValue | null): number | null | "invalid" {
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+  const n = Number.parseFloat(raw.replace(",", "."));
+  return Number.isFinite(n) && n >= 0 && n <= 99_999_999 ? n : "invalid";
+}
+
+/**
+ * Guarda os portes por país de um produto. Campos: rate_<PAÍS>_1, rate_<PAÍS>_2, rate_<PAÍS>_3.
+ * País com "1 un." vazio ⇒ volta a usar os portes por defeito.
+ */
+export async function saveCountryRates(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const productName = formData.get("product_name");
+  if (typeof productName !== "string" || productName.trim() === "") return actionError("Produto inválido.");
+  const { supabase, user } = await requireUser();
+
+  const { data: countries, error: countriesError } = await supabase.from("dropship_shipping_countries").select("country_code, name").eq("user_id", user.id);
+  if (countriesError) return actionError(countriesError.message);
+
+  const upserts: { user_id: string; product_name: string; country_code: string; shipping_1: number; shipping_2: number | null; shipping_3: number | null; updated_at: string }[] = [];
+  const clear: string[] = [];
+  for (const c of countries) {
+    const s1 = optionalMoney(formData.get(`rate_${c.country_code}_1`));
+    const s2 = optionalMoney(formData.get(`rate_${c.country_code}_2`));
+    const s3 = optionalMoney(formData.get(`rate_${c.country_code}_3`));
+    if (s1 === "invalid" || s2 === "invalid" || s3 === "invalid") return actionError(`Valor inválido em ${c.name}.`);
+    if (s1 === null) {
+      clear.push(c.country_code);
+      continue;
+    }
+    if ((s2 !== null && s2 < s1) || (s3 !== null && s3 < (s2 ?? s1))) return actionError(`${c.name}: os portes de 2/3 unidades não podem ser menores que os do escalão anterior.`);
+    upserts.push({ user_id: user.id, product_name: productName, country_code: c.country_code, shipping_1: s1, shipping_2: s2, shipping_3: s3, updated_at: new Date().toISOString() });
+  }
+
+  if (upserts.length > 0) {
+    const { error } = await supabase.from("dropship_shipping_rates").upsert(upserts, { onConflict: "user_id,product_name,country_code" });
+    if (error) return actionError(error.message);
+  }
+  if (clear.length > 0) {
+    const { error } = await supabase.from("dropship_shipping_rates").delete().eq("user_id", user.id).eq("product_name", productName).in("country_code", clear);
+    if (error) return actionError(error.message);
+  }
+  revalidate();
+  return actionSuccess(`Portes guardados: ${upserts.length} ${upserts.length === 1 ? "país com valor próprio" : "países com valor próprio"}, os restantes usam o padrão.`);
+}
+
+/* ─── Calculadora de produtos (ideias) ────────────────────────────────────── */
+
+const ideaSchema = z.object({
+  id: z.union([z.literal(""), z.string().uuid()]).optional(),
+  name: z.string().trim().min(1, "dá um nome ao produto").max(120),
+  inputs: z.string().max(20_000),
+});
+
+export async function saveProductIdea(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const parsed = ideaSchema.safeParse(formToObject(formData));
+  if (!parsed.success) return actionError(zodMessage(parsed.error));
+  let json: unknown;
+  try {
+    json = JSON.parse(parsed.data.inputs);
+  } catch {
+    return actionError("Dados da calculadora inválidos.");
+  }
+  const inputs = productIdeaInputsSchema.safeParse(json);
+  if (!inputs.success) return actionError(zodMessage(inputs.error));
+  const value: Json = inputs.data;
+  const { supabase, user } = await requireUser();
+  const now = new Date().toISOString();
+  if (parsed.data.id) {
+    const { data, error } = await supabase
+      .from("dropship_product_ideas")
+      .update({ name: parsed.data.name, inputs: value, updated_at: now })
+      .eq("id", parsed.data.id)
+      .eq("user_id", user.id)
+      .select("id");
+    if (error) return actionError(error.message);
+    if (data.length === 0) return actionError("Produto não encontrado.");
+  } else {
+    const { error } = await supabase.from("dropship_product_ideas").insert({ user_id: user.id, name: parsed.data.name, inputs: value, updated_at: now });
+    if (error) return actionError(error.message);
+  }
+  revalidate();
+  return actionSuccess(`"${parsed.data.name}" guardado.`);
+}
+
+export async function deleteProductIdea(formData: FormData): Promise<void> {
+  const parsed = idSchema.safeParse(formToObject(formData));
+  if (!parsed.success) return;
+  const { supabase, user } = await requireUser();
+  await supabase.from("dropship_product_ideas").delete().eq("id", parsed.data.id).eq("user_id", user.id);
   revalidate();
 }
