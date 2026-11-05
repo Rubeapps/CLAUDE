@@ -40,6 +40,39 @@ export async function upsertProduct(_prev: ActionState, formData: FormData): Pro
   return actionSuccess(`SKU ${parsed.data.sku} guardado.`);
 }
 
+const money = formNumber.pipe(z.number().min(0, "não pode ser negativo").max(99_999_999));
+
+const productGroupSchema = z
+  .object({
+    name: z.string().trim().min(1, "obrigatório").max(200),
+    cogs: money,
+    shipping_cost: money,
+    shipping_cost_2: money,
+    shipping_cost_3: money,
+  })
+  .refine((v) => v.shipping_cost_2 >= v.shipping_cost && v.shipping_cost_3 >= v.shipping_cost_2, {
+    message: "Os portes de 2 e 3 unidades não podem ser menores que os do escalão anterior.",
+    path: ["shipping_cost_2"],
+  });
+
+/** Atualiza COGS e os 3 escalões de portes de todas as variantes (SKUs) de um produto de uma só vez. */
+export async function updateProductGroupCosts(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const parsed = productGroupSchema.safeParse(formToObject(formData));
+  if (!parsed.success) return actionError(zodMessage(parsed.error));
+  const { name, cogs, shipping_cost, shipping_cost_2, shipping_cost_3 } = parsed.data;
+  const { supabase, user } = await requireUser();
+  const { data, error } = await supabase
+    .from("dropship_products")
+    .update({ cogs, shipping_cost, shipping_cost_2, shipping_cost_3 })
+    .eq("user_id", user.id)
+    .eq("name", name)
+    .select("id");
+  if (error) return actionError(error.message);
+  if (data.length === 0) return actionError("Produto não encontrado.");
+  revalidate();
+  return actionSuccess(`${data.length} ${data.length === 1 ? "variante atualizada" : "variantes atualizadas"}.`);
+}
+
 export async function deleteProduct(formData: FormData): Promise<void> {
   const parsed = idSchema.safeParse(formToObject(formData));
   if (!parsed.success) return;
