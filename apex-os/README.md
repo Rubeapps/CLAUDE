@@ -12,7 +12,7 @@ Tudo corre em camadas gratuitas: Vercel/qualquer host Node, Supabase Free, GitHu
 
 ## Arranque
 
-1. **Supabase**: cria um projeto, abre *SQL Editor* e executa `supabase/schema.sql` , depois `supabase/migrations/002_control_features.sql` , `supabase/migrations/003_rls_performance.sql` `supabase/migrations/004_shipping_tiers.sql` `supabase/migrations/005_spy_ad_creatives.sql` e `supabase/migrations/006_trading_bots_treasury.sql`.
+1. **Supabase**: cria um projeto, abre *SQL Editor* e executa `supabase/schema.sql` , depois `supabase/migrations/002_control_features.sql` , `supabase/migrations/003_rls_performance.sql` `supabase/migrations/004_shipping_tiers.sql` `supabase/migrations/005_spy_ad_creatives.sql` `supabase/migrations/006_trading_bots_treasury.sql` e `supabase/migrations/007_trading_precision.sql`.
    Em *Authentication → URL Configuration* adiciona `<SITE_URL>/auth/callback` aos redirect URLs.
 2. **Variáveis**: `cp .env.example .env.local` e preenche.
 3. **Correr**:
@@ -68,6 +68,8 @@ curl -X POST "$APEX_BASE_URL/api/cron/spy-runner?summary=true" -H "Authorization
 
 ## Executive Playbook (`/knowledge`) e simulador
 
+- **Academia** (separador inicial): 14 áreas do negócio (empresa, contabilidade, pessoas, marketing, oferta/conversão, operações, produto/marca, clientes, dados, fiscal/legal, tesouraria, negociação, fundador, trading), cada uma em 3 níveis — Amador/Iniciante, Pro e GOAT — com princípios dos melhores operadores, ações da semana, métricas, ligação ao Apex e fontes. Progresso "dominado" guardado por utilizador. Conteúdo em `lib/knowledge/`.
+
 - Modelos de Buffett/Munger, Goldratt, Grove/Rabois e Dalio aplicados aos números reais (Owner Earnings, Throughput).
 - P&L em cascata até ao Net Cash Profit, ciclo de conversão de caixa, cofre fiscal (IVA, IRS/IRC, rolling reserve) e checklist de conformidade guardado por utilizador.
 - Simulador what-if em `/dropship` (CPA, portes, devoluções, ticket médio → lucro mensal, BE ROAS, margem de segurança).
@@ -85,6 +87,8 @@ curl -X POST "$APEX_BASE_URL/api/cron/spy-runner?summary=true" -H "Authorization
 Fórmulas puras em `lib/calculations/engine.ts`. Alertas via `sendTelegramAlert(mensagem, "INFO" | "DROPSHIP" | "SPY" | "CIRCUIT BREAKER")`.
 
 ## Notas de implementação
+
+- As funções correm em **Paris (`cdg1`, `vercel.json`)**: a Binance bloqueia pedidos vindos dos EUA, e o Supabase do projeto está em eu-west-3.
 
 - `crypto` vem do módulo nativo `node:crypto`; o pacote npm `crypto` é um stub obsoleto e não é instalado.
 - `app/page.tsx` e `app/(dashboard)/page.tsx` resolveriam ambos para `/` (erro no Next.js), por isso o dashboard unificado vive em `app/(dashboard)/dashboard/page.tsx` (`/dashboard`) e `/` é a landing.

@@ -40,7 +40,7 @@ export default async function KnowledgePage() {
     <div className="space-y-6">
       <PageHeader
         title="Executive Playbook & Knowledge Hub"
-        description="Os modelos mentais dos maiores operadores de capital, aplicados aos teus números reais, mais o manual fiscal e operacional de e-commerce."
+        description="Academia em 3 níveis com os melhores do mundo em cada área do negócio, modelos mentais aplicados aos teus números e o manual fiscal e operacional de e-commerce."
       />
       <KnowledgeHub metrics={metrics} vault={vault} checklist={vault.checklist} />
     </div>
