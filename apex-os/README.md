@@ -57,7 +57,8 @@ curl -X POST "$APEX_BASE_URL/api/cron/spy-runner?summary=true" -H "Authorization
 - Usa a Graph API `/ads_archive` (anúncios **ativos** entregues na UE). Anúncios com o mesmo texto/título/domínio são agrupados num criativo e contados em `active_copies_count`.
 - **Winner Score** (0–100) = min(50, dias ativos × 2.5) + min(50, cópias × 5). Em escala: ≥ 5 cópias ou ≥ 14 dias com ≥ 3 cópias. Tiers: Novo, Em teste, Estável, Winner provável, Winner escala.
 - O cron do Spy também sincroniza as lojas ativas com Meta Page ID.
-- Requer `META_ACCESS_TOKEN` (app Meta com identidade verificada, gratuito). **A API não devolve o ficheiro do vídeo/imagem, o CTA nem o URL de destino completo**: o cartão mostra o link para o anúncio na Meta Library e permite colar o link do MP4 para o leitor e o download.
+- **Sem token (grátis):** botão "Enviar para o Apex" (bookmarklet). Na Ad Library da marca, o botão lê os anúncios visíveis no browser do utilizador (texto, data de início, nº de cópias, links de vídeo/imagem), copia-os para o clipboard e o utilizador cola em `/spy/ads` → *Importar*. A interpretação é feita no servidor (`lib/spy/ad-library-parser.ts`, EN/PT/ES), por isso se a Meta mudar o layout só é preciso ajustar o parser. Só guarda texto e links (sem ficheiros); criativos inativos há mais de 60 dias são apagados em cada importação.
+- Sincronização automática (opcional): requer `META_ACCESS_TOKEN` (app Meta com identidade verificada, gratuito). **A API não devolve o ficheiro do vídeo/imagem, o CTA nem o URL de destino completo**: o cartão mostra o link para o anúncio na Meta Library e permite colar o link do MP4 para o leitor e o download.
 
 ## Trading Bots (`/trading/bots`, migração 006)
 

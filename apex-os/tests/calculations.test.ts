@@ -258,3 +258,57 @@ test("Academia: 14 áreas, 3 níveis cada, conteúdo completo e chaves válidas"
     }
   }
 });
+
+test("Ad Library: leitura de cartões capturados pelo botão (EN e PT)", async () => {
+  const { parseLibraryCard, parseLibraryDate, pageIdFromLibraryUrl } = await import("../lib/spy/ad-library-parser.ts");
+  assert.equal(parseLibraryDate("12 Mar 2026"), "2026-03-12");
+  assert.equal(parseLibraryDate("Mar 12, 2026"), "2026-03-12");
+  assert.equal(parseLibraryDate("12 de mar. de 2026"), "2026-03-12");
+  assert.equal(parseLibraryDate("3 de dezembro de 2025"), "2025-12-03");
+  assert.equal(parseLibraryDate("12/03/2026"), "2026-03-12");
+  assert.equal(parseLibraryDate("31 Feb 2026"), null);
+
+  const en = parseLibraryCard({
+    text: "Active\nLibrary ID: 1234567890123\nStarted running on 2 Oct 2026\nPlatforms\n7 ads use this creative and text\nSee ad details\nIRAZIA\nSponsored\nThe softest fleece-lined tights you will ever wear. Warm, opaque and invisible under any outfit.\nIRAZIA.COM\nFleece Tights – 50% OFF\nShop now",
+    links: ["https://l.facebook.com/l.php?u=https%3A%2F%2Firazia.com%2Fproducts%2Ftights%3Futm_source%3Dfb&h=x", "https://www.facebook.com/irazia"],
+    videoUrl: "https://video.fcdn.net/v/t42/abc.mp4?oh=1",
+    posterUrl: "https://scontent.xx.fbcdn.net/poster.jpg",
+    imageUrl: null,
+  });
+  assert.ok(en);
+  assert.equal(en?.adArchiveId, "1234567890123");
+  assert.equal(en?.startDate, "2026-10-02");
+  assert.equal(en?.copies, 7);
+  assert.equal(en?.pageName, "IRAZIA");
+  assert.equal(en?.headline, "Fleece Tights – 50% OFF");
+  assert.match(en?.caption ?? "", /softest fleece-lined tights/);
+  assert.equal(en?.landingUrl, "https://irazia.com/products/tights");
+  assert.equal(en?.isActive, true);
+
+  const pt = parseLibraryCard({
+    text: "Ativo\nID da biblioteca: 998877665544\nComeçou a ser veiculado em 15 de set. de 2026\nLoja X\nPatrocinado\nMeias térmicas que aquecem de verdade, pack de 5 pares.\nComprar agora",
+    links: [],
+    videoUrl: null,
+    posterUrl: null,
+    imageUrl: "https://scontent.xx.fbcdn.net/img.jpg",
+  });
+  assert.equal(pt?.startDate, "2026-09-15");
+  assert.equal(pt?.copies, 1);
+  assert.equal(pt?.pageName, "Loja X");
+  assert.equal(pt?.thumbnailUrl, "https://scontent.xx.fbcdn.net/img.jpg");
+  assert.equal(parseLibraryCard({ text: "sem id aqui", links: [], videoUrl: null, posterUrl: null, imageUrl: null }), null);
+  assert.equal(pageIdFromLibraryUrl("https://www.facebook.com/ads/library/?active_status=active&view_all_page_id=104512345678901"), "104512345678901");
+});
+
+test("bookmarklet gera JavaScript válido e o JSON é validado", async () => {
+  const { buildBookmarklet, bookmarkletSource } = await import("../lib/spy/bookmarklet.ts");
+  const { parseLibraryPayload, fallbackPageId } = await import("../lib/spy/ad-library-import.ts");
+  const href = buildBookmarklet("https://apex-os-six-alpha.vercel.app");
+  assert.ok(href.startsWith("javascript:"));
+  assert.doesNotThrow(() => new Function(decodeURIComponent(href.slice("javascript:".length))));
+  assert.match(bookmarkletSource("https://x.app"), /apex-ad-library/);
+  const ok = parseLibraryPayload(JSON.stringify({ v: 1, source: "apex-ad-library", url: "https://www.facebook.com/ads/library/?view_all_page_id=123456", cards: [{ text: "Library ID: 1234567", links: [] }] }));
+  assert.equal(ok.ok, true);
+  assert.equal(parseLibraryPayload("isto não é json").ok, false);
+  assert.equal(fallbackPageId("Loja Ção X"), "pagina:loja-cao-x");
+});

@@ -9,7 +9,8 @@ import { requireUser } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Meta Ad Intelligence" };
 
-export default async function SpyAdsPage() {
+export default async function SpyAdsPage({ searchParams }: { searchParams: Promise<{ import?: string }> }) {
+  const params = await searchParams;
   const { supabase, user } = await requireUser();
   const data = await getSpyAdsData(supabase, user.id);
 
@@ -24,7 +25,7 @@ export default async function SpyAdsPage() {
           </Link>
         }
       />
-      <AdsWorkspace ads={data.ads} targets={data.targets} lastSyncAt={data.lastSyncAt} metaConfigured={isMetaConfigured()} />
+      <AdsWorkspace ads={data.ads} targets={data.targets} lastSyncAt={data.lastSyncAt} metaConfigured={isMetaConfigured()} autoOpenImport={params.import === "1"} />
     </div>
   );
 }
