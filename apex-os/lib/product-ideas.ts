@@ -12,6 +12,10 @@ export const DEFAULT_SHIPPING_KEY = "DEFAULT";
 
 export const productIdeaInputsSchema = z.object({
   unitPrice: money,
+  /** Preço total da encomenda de 2 unidades (pack). Vazio ⇒ 2 × unitPrice. */
+  price2: optMoney.optional(),
+  /** Preço total da encomenda de 3 unidades (pack). Vazio ⇒ 3 × unitPrice. */
+  price3: optMoney.optional(),
   unitCogs: money,
   cpa: money,
   vatPercent: z.number().min(0).max(30),

@@ -342,3 +342,22 @@ test("calculadora de produto: lucro, CPA máximo, preço recomendado e custo má
   assert.equal(vat.maxUnitCogs, 7);
   assert.equal(calculateProduct({ unitPrice: 10, unitCogs: 1, quantity: 1, shipping: 1, gatewayPercent: 0, gatewayFixed: 0, vatPercent: 0, cpa: 0, targetMarginPercent: 95 }).recommendedUnitPrice !== null, true);
 });
+
+test("calculadora: preço de pack substitui preço × quantidade", async () => {
+  const { calculateProduct } = await import("../lib/calculations/product-calc.ts");
+  const common = { unitPrice: 31, unitCogs: 3.43, gatewayPercent: 1.5, gatewayFixed: 0.25, vatPercent: 0, cpa: 12, targetMarginPercent: 20 };
+
+  const two = calculateProduct({ ...common, quantity: 2, shipping: 14.47, orderPrice: 46 });
+  assert.equal(two.revenue, 46);
+  assert.equal(two.gatewayFee, 0.94);
+  assert.equal(two.profit, 11.73);
+
+  const three = calculateProduct({ ...common, quantity: 3, shipping: 18.6, orderPrice: 62 });
+  assert.equal(three.revenue, 62);
+  assert.equal(three.profit, 19.93);
+
+  // Sem preço de pack mantém-se o comportamento anterior.
+  assert.equal(calculateProduct({ ...common, quantity: 2, shipping: 14.47 }).revenue, 62);
+  assert.equal(calculateProduct({ ...common, quantity: 2, shipping: 14.47, orderPrice: null }).revenue, 62);
+  assert.equal(calculateProduct({ ...common, quantity: 2, shipping: 14.47, orderPrice: 0 }).revenue, 62);
+});
