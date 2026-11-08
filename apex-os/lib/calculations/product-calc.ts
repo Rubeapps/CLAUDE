@@ -18,6 +18,8 @@ export interface ProductCalcInput {
   unitCogs: number;
   /** Unidades na encomenda (bundle). */
   quantity: number;
+  /** Preço total da encomenda nesta quantidade (pack). Vazio ou 0 ⇒ unitPrice × quantity. */
+  orderPrice?: number | null;
   /** Portes totais da encomenda para esta quantidade e país. */
   shipping: number;
   /** Taxa do gateway em % (1.5 = 1.5%). */
@@ -60,7 +62,8 @@ export interface ProductCalcResult {
 export function calculateProduct(input: ProductCalcInput): ProductCalcResult {
   const q = Math.max(1, Math.trunc(input.quantity));
   const price = nonNeg(input.unitPrice);
-  const revenue = price * q;
+  const orderPrice = nonNeg(input.orderPrice ?? 0);
+  const revenue = orderPrice > 0 ? orderPrice : price * q;
   const vatRate = nonNeg(input.vatPercent) / 100;
   const g = nonNeg(input.gatewayPercent) / 100;
   const fixed = revenue > 0 ? nonNeg(input.gatewayFixed) : 0;

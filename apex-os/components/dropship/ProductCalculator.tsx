@@ -17,6 +17,12 @@ import { cn } from "@/lib/utils";
 
 type Field = "unitPrice" | "unitCogs" | "cpa" | "vatPercent" | "targetMarginPercent" | "gatewayPercent" | "gatewayFixed";
 type TierText = { s1: string; s2: string; s3: string };
+type PackText = { price2: string; price3: string };
+
+const PACK_FIELDS: { key: keyof PackText; quantity: 2 | 3 }[] = [
+  { key: "price2", quantity: 2 },
+  { key: "price3", quantity: 3 },
+];
 
 const FIELDS: { key: Field; label: string; suffix: string }[] = [
   { key: "unitPrice", label: "Preço de venda / un.", suffix: "€" },
@@ -51,6 +57,10 @@ function toText(inputs: ProductIdeaInputs): Record<Field, string> {
   };
 }
 
+function packsToText(inputs: ProductIdeaInputs): PackText {
+  return { price2: inputs.price2 == null ? "" : String(inputs.price2), price3: inputs.price3 == null ? "" : String(inputs.price3) };
+}
+
 function tiersToText(t: ShippingTiers | undefined): TierText {
   return { s1: t ? String(t.s1) : "", s2: t?.s2 !== null && t?.s2 !== undefined ? String(t.s2) : "", s3: t?.s3 !== null && t?.s3 !== undefined ? String(t.s3) : "" };
 }
@@ -65,6 +75,7 @@ export function ProductCalculator({ ideas, countries, currency }: { ideas: Produ
   const [selectedId, setSelectedId] = useState<string>("");
   const [name, setName] = useState("Novo produto");
   const [fields, setFields] = useState<Record<Field, string>>(toText(DEFAULT_IDEA_INPUTS));
+  const [packs, setPacks] = useState<PackText>(packsToText(DEFAULT_IDEA_INPUTS));
   const [shipping, setShipping] = useState<Record<string, TierText>>({ [DEFAULT_SHIPPING_KEY]: tiersToText(DEFAULT_IDEA_INPUTS.shipping[DEFAULT_SHIPPING_KEY]) });
   const [quantity, setQuantity] = useState<1 | 2 | 3>(1);
   const [state, saveAction] = useActionState(saveProductIdea, idleState);
@@ -74,6 +85,7 @@ export function ProductCalculator({ ideas, countries, currency }: { ideas: Produ
     setSelectedId(idea?.id ?? "");
     setName(idea?.name ?? "Novo produto");
     setFields(toText(inputs));
+    setPacks(packsToText(inputs));
     const next: Record<string, TierText> = {};
     for (const [code, tiers] of Object.entries(inputs.shipping)) next[code] = tiersToText(tiers);
     if (!next[DEFAULT_SHIPPING_KEY]) next[DEFAULT_SHIPPING_KEY] = tiersToText(DEFAULT_IDEA_INPUTS.shipping[DEFAULT_SHIPPING_KEY]);
@@ -99,8 +111,11 @@ export function ProductCalculator({ ideas, countries, currency }: { ideas: Produ
     return { tiers: { s1: num(t.s1), s2: optNum(t.s2), s3: optNum(t.s3) }, own: true };
   }
 
+  const price2 = optNum(packs.price2);
+  const price3 = optNum(packs.price3);
   const base = {
     unitPrice: num(fields.unitPrice),
+    orderPrice: quantity === 2 ? price2 : quantity === 3 ? price3 : null,
     unitCogs: num(fields.unitCogs),
     quantity,
     gatewayPercent: num(fields.gatewayPercent),
@@ -118,6 +133,8 @@ export function ProductCalculator({ ideas, countries, currency }: { ideas: Produ
 
   const inputsJson: ProductIdeaInputs = {
     unitPrice: base.unitPrice,
+    price2,
+    price3,
     unitCogs: base.unitCogs,
     cpa: base.cpa,
     vatPercent: Math.min(30, base.vatPercent),
@@ -161,6 +178,21 @@ export function ProductCalculator({ ideas, countries, currency }: { ideas: Produ
                   {f.label} <span className="text-muted-foreground">({f.suffix})</span>
                 </Label>
                 <Input id={`calc-${f.key}`} inputMode="decimal" value={fields[f.key]} onChange={(e) => setFields((prev) => ({ ...prev, [f.key]: e.target.value }))} className="h-8" />
+              </div>
+            ))}
+            {PACK_FIELDS.map((f) => (
+              <div key={f.key} className="space-y-1">
+                <Label htmlFor={`calc-${f.key}`}>
+                  Preço total {f.quantity} un. <span className="text-muted-foreground">(€)</span>
+                </Label>
+                <Input
+                  id={`calc-${f.key}`}
+                  inputMode="decimal"
+                  value={packs[f.key]}
+                  onChange={(e) => setPacks((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  placeholder={String(Math.round(base.unitPrice * f.quantity * 100) / 100)}
+                  className="h-8"
+                />
               </div>
             ))}
           </div>
@@ -257,7 +289,7 @@ export function ProductCalculator({ ideas, countries, currency }: { ideas: Produ
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Preço p/ margem de {num(fields.targetMarginPercent)}%</p>
-                <p className="text-lg font-semibold tabular-nums text-primary">{main.recommendedUnitPrice === null ? "impossível" : `${money(main.recommendedUnitPrice)} / un.`}</p>
+                <p className="text-lg font-semibold tabular-nums text-primary">{main.recommendedUnitPrice === null ? "impossível" : quantity === 1 ? `${money(main.recommendedUnitPrice)} / un.` : `${money(main.recommendedUnitPrice * quantity)} / ${quantity} un.`}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Máx. a pagar ao fornecedor</p>
